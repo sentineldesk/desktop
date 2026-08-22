@@ -1,0 +1,10 @@
+[Desktop Entry]
+# See sentineldesk-files.desktop for why these are files rather than `action=`
+# lines in the panel config, and why Icon is an absolute path.
+Type=Application
+Name=Terminal
+Comment=A shell on the shared screen
+Exec=lxterminal
+Icon=/usr/share/icons/Papirus/24x24/apps/utilities-terminal.svg
+Terminal=false
+Categories=System;TerminalEmulator;

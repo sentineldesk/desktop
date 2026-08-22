@@ -1,0 +1,505 @@
+/*
+ * SentinelDesk
+ * A collaborative operating system for people and AI agents.
+ *
+ * Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+ *
+ * Licensed under the Apache License, Version 2.0.
+ *
+ * This product's name and logo are trademarks of Federico Pereira and are not
+ * covered by the license above. See the README for the trademark policy.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+
+/* Documentation styling.
+ *
+ * Laid out the way technical documentation has settled on being laid out: a
+ * grouped navigation rail, a text column at a fixed reading measure left
+ * against it, and tabbed code for the choices a reader makes once — which
+ * operating system they are on — rather than every time.
+ *
+ * Two typefaces doing two jobs. Headings are set in a serif at regular weight:
+ * it separates structure from body text by shape instead of by shouting, which
+ * is what a wall of bold sans headings does. Everything else is the system sans
+ * at a quiet grey, so the things that ARE emphasised still read as emphasis.
+ *
+ * No webfont is loaded. A page served from the container has to render the same
+ * on a machine with no route to the internet, and the system serif stack is
+ * genuinely good now: New York on macOS, Georgia on Windows, Liberation or
+ * DejaVu on Linux.
+ *
+ * The accent stays SentinelDesk's phosphor green — the same one the control
+ * layer uses for "you are driving". Borrowing a layout is craft; borrowing
+ * another product's brand colour is costume.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --bg:         #0C0E0D;
+  --raise:      #141817;
+  --line:       rgba(255,255,255,.09);
+  --line-soft:  rgba(255,255,255,.055);
+
+  --head:       #DEDEDE;   /* headings, and anything being emphasised */
+  --ink:        #9E9E9E;   /* body text */
+  --faint:      #6E7573;
+
+  --drive:      #3FD68C;   /* the accent, used sparingly */
+  --drive-ink:  #052B17;
+  --watch:      #F2B33D;
+  --rec:        #FF6B63;
+
+  /* The interface neon, and the corner. Both come from the site's stylesheet
+     rather than being approximated here: the bar at the top of this page is
+     meant to be the same object as the bar on every other page, and a second
+     set of near-enough values is how two objects drift apart. */
+  --cyan:       #4CC8FF;
+  --radius: 2px;
+  --notch: 14px;
+  --clip: polygon(0 0, calc(100% - var(--notch)) 0, 100% var(--notch),
+                  100% 100%, 0 100%);
+
+  --serif: ui-serif, "New York", Georgia, "Times New Roman", Times, serif;
+  --sans:  system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono:  ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas,
+           "Liberation Mono", monospace;
+
+  /* The site's display face, for the bar only. The prose below it keeps its
+     serif: this page is a document and reads like one, and the bar is the
+     product's furniture. */
+  --display: 'Archivo', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --hdr: 62px;
+  --side: 268px;
+  --measure: 76ch;   /* prose */
+  --wide: 104ch;     /* code, tables, tab groups */
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The sidebar's room used to be padding on the body. It moved onto the document
+   itself so the bar can run the full width of the window above both of them —
+   a header indented by 268px would be a header belonging to the article rather
+   than to the site. */
+
+.skip {
+  position: absolute; left: -9999px; top: 8px; z-index: 60;
+  padding: 8px 14px; background: var(--drive); color: var(--drive-ink);
+  border-radius: 6px; font-weight: 600; text-decoration: none;
+}
+.skip:focus { left: 8px; }
+
+/* --- the site's bar ---------------------------------------------------------
+ *
+ * Lifted from the site's stylesheet rather than reinterpreted, because the point
+ * is that it is the same bar. What differs is the wrap: there is no 1080px
+ * column to centre against on a page laid out around a fixed sidebar, so it
+ * spans the window and keeps the sidebar's own left inset, which lines the brand
+ * up with the contents beneath it.
+ */
+
+header {
+  position: sticky; top: 0; z-index: 50;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 0 rgba(76,200,255,.06);
+}
+header .wrap {
+  display: flex; align-items: center; gap: 20px;
+  height: var(--hdr); padding: 0 clamp(16px, 3vw, 22px);
+}
+header nav { display: flex; align-items: center; gap: 22px; margin-left: auto; }
+header nav a {
+  color: var(--ink); text-decoration: none; font-size: 14.5px; border: 0;
+  font-family: var(--display);
+  transition: color .15s ease;
+}
+header nav a:hover { color: var(--head); }
+header nav a[aria-current="page"] {
+  color: var(--cyan);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--cyan) 55%, transparent);
+}
+
+/* The repository, as a mark rather than another word in the row. Brand green,
+   brand glow: it goes to the product, not to another page of this site. */
+.ghub {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; flex: none;
+  color: var(--drive);
+  transition: filter .15s ease, transform .06s ease;
+}
+.ghub svg {
+  width: 21px; height: 21px; fill: currentColor;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--drive) 45%, transparent));
+}
+.ghub:hover { filter: brightness(1.18); }
+.ghub:active { transform: translateY(1px); }
+
+/* --- buttons ----------------------------------------------------------------
+ * One weight is enough here: the guide has a single primary action. It wears
+ * the notch, which is the site's one ornament and the only thing on this page
+ * that is not a rectangle.
+ */
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px 22px; border: 1px solid transparent; border-radius: var(--radius);
+  font-family: var(--display); font-size: 15px; font-weight: 700;
+  font-stretch: 105%; letter-spacing: .01em;
+  text-decoration: none; cursor: pointer; white-space: nowrap;
+  transition: filter .15s ease, box-shadow .15s ease, transform .06s ease;
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary {
+  background: var(--drive); color: var(--drive-ink);
+  clip-path: var(--clip);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--drive) 35%, transparent);
+}
+.btn-primary:hover { filter: brightness(1.12); }
+.btn-sm { padding: 8px 15px; font-size: 14px; }
+
+/* --- navigation rail ------------------------------------------------------
+ *
+ * The same background as the page, divided by a single line. A panel in its own
+ * colour would read as a second surface; this reads as one page with a margin.
+ */
+
+#side {
+  position: fixed; top: var(--hdr); left: 0; bottom: 0; width: var(--side);
+  z-index: 40; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--bg); border-right: 1px solid var(--line);
+  padding: 20px 0 28px; display: flex; flex-direction: column; gap: 18px;
+  transition: transform .18s ease;
+}
+body.side-closed #side { transform: translateX(-100%); }
+
+/* Only the collapse control lives in this row now, so it sits where a control
+   sits: at the end, against the edge it pulls the panel toward. */
+.head { display: flex; align-items: center; justify-content: flex-end; padding: 0 12px 0 22px; }
+
+/* The site's brand, in the bar. Same shape, same green, same glow. */
+.brand {
+  display: inline-flex; align-items: center; gap: 10px;
+  color: var(--head); text-decoration: none; border: 0;
+  font-family: var(--display); font-size: 17px; letter-spacing: -.005em;
+  font-weight: 700; font-stretch: 112%;
+}
+.brand svg { width: 22px; height: 22px; flex: none;
+             filter: drop-shadow(0 0 6px color-mix(in srgb, var(--drive) 55%, transparent)); }
+.brand .scr { fill: var(--drive); }
+.brand .gls { fill: var(--bg); }
+.brand .std { fill: color-mix(in srgb, var(--drive) 62%, #000); }
+
+#side-close, #side-open {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; flex: none;
+  border: 1px solid transparent; border-radius: 6px;
+  background: none; color: var(--faint); cursor: pointer;
+}
+#side-close:hover, #side-open:hover {
+  color: var(--head); background: var(--raise); border-color: var(--line-soft);
+}
+#side-close svg, #side-open svg {
+  width: 15px; height: 15px; fill: none; stroke: currentColor;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+#side-open {
+  position: fixed; top: calc(var(--hdr) + 16px); left: 16px; z-index: 41;
+  width: 34px; height: 34px; background: var(--bg);
+  border-color: var(--line); opacity: 0; pointer-events: none;
+  transition: opacity .18s ease;
+}
+body.side-closed #side-open { opacity: 1; pointer-events: auto; }
+
+.tagline {
+  padding: 0 22px; font-size: 13px; line-height: 1.5; color: var(--faint);
+}
+
+/* The switch as the site draws it: a segmented pill, the active one filled with
+   the accent. It reads as one control with three positions rather than three
+   buttons that happen to be adjacent. Keyed on aria-pressed, which is what
+   docs.js already sets — no second source of truth for which one is on. */
+.langs {
+  display: flex; align-items: center; gap: 2px;
+  padding: 2px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--raise);
+}
+.langs button {
+  appearance: none; border: 0; background: transparent; cursor: pointer;
+  font-family: var(--mono); font-size: 11.5px; font-weight: 600;
+  letter-spacing: .04em; color: var(--faint);
+  padding: 4px 8px; border-radius: var(--radius); line-height: 1.4;
+  transition: color .15s ease, background .15s ease;
+}
+.langs button:hover { color: var(--head); background: rgba(255,255,255,.06); }
+.langs button[aria-pressed="true"] {
+  color: var(--drive-ink); background: var(--drive); font-weight: 700;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--drive) 45%, transparent);
+}
+.langs button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+/* The contents follow the document's own shape: an h2 becomes a group label,
+   its h3s become the items under it. Nothing to keep in sync by hand. */
+/* The search box.
+ *
+ * It filters the contents list in place rather than opening a result panel: the
+ * answer appears where the reader already knows how to read, and emptying the
+ * box puts the list back untouched. Sized and coloured like the list under it,
+ * because it is part of the same object. */
+#search-box { padding: 0 12px 10px; }
+#search {
+  width: 100%; box-sizing: border-box;
+  padding: 7px 10px; border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--raise); color: var(--head);
+  font: inherit; font-size: 14px;
+}
+#search::placeholder { color: var(--faint); }
+#search:focus {
+  outline: none;
+  border-color: var(--drive);
+  box-shadow: 0 0 0 3px rgba(63, 214, 140, .13);
+}
+/* The search cancel button browsers add, made to match rather than sit there
+   as a white blob on a dark field. */
+#search::-webkit-search-cancel-button {
+  -webkit-appearance: none; height: 14px; width: 14px; cursor: pointer;
+  background: var(--faint);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 6l12 12M18 6L6 18' stroke='black' stroke-width='2.5' fill='none'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+#search-empty {
+  margin: 8px 2px 0; font-size: 13px; line-height: 1.45; color: var(--faint);
+}
+
+#toc { flex: 1; padding: 0 12px; }
+#toc a {
+  display: block; padding: 5px 10px; border-radius: 6px; border: 0;
+  color: var(--ink); text-decoration: none; font-size: 14px; line-height: 1.45;
+}
+/* A section that has sub-headings becomes a heading in the list too: brighter,
+   with air above it, so the list has the same structure the page does. */
+#toc a.group {
+  margin-top: 16px; font-size: 13px; font-weight: 600; color: var(--head);
+}
+#toc a.group:first-child { margin-top: 0; }
+/* Where one guide ends and the next begins. */
+#toc .track {
+  margin: 22px 0 6px; padding: 0 10px 6px;
+  border-bottom: 1px solid var(--line);
+  font-size: 10.5px; font-weight: 600; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--faint);
+}
+#toc .track + a.group { margin-top: 6px; }
+#toc a:hover { color: var(--head); background: var(--raise); }
+#toc a.current { color: var(--head); background: var(--raise); font-weight: 500; }
+
+.side-foot { padding: 6px 22px 0; }
+.side-foot a { color: var(--faint); text-decoration: none; font-size: 13px; border: 0; }
+.side-foot a:hover { color: var(--drive); }
+
+/* --- content --------------------------------------------------------------
+ *
+ * Left against the rail rather than centred in whatever is left over. Centring
+ * put a third of a wide screen between the navigation and the first word, which
+ * read as a layout that had not been finished.
+ *
+ * Two widths: prose keeps a reading measure, while code, tables and tab groups
+ * take the wider one — they are what suffers from being squeezed.
+ */
+
+#doc {
+  padding: 56px clamp(24px, 4vw, 56px) 120px; min-width: 0; outline: none;
+  margin-left: var(--side); transition: margin-left .18s ease;
+}
+body.side-closed #doc { margin-left: 0; }
+#content { max-width: var(--wide); }
+
+section > p, section > ul, section > ol, section > .note,
+section > h2, section > h3, .lede {
+  max-width: var(--measure);
+}
+
+.loading { color: var(--faint); }
+
+section { scroll-margin-top: 24px; }
+section + section { margin-top: 52px; }
+
+h1 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: 38px; line-height: 1.18; letter-spacing: -.018em;
+  color: var(--head); text-wrap: balance; margin-bottom: 14px;
+}
+.lede { font-size: 18px; line-height: 1.55; color: var(--ink); margin-bottom: 18px; }
+
+h2 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: 27px; line-height: 1.25; letter-spacing: -.012em;
+  color: var(--head); text-wrap: balance;
+  margin-bottom: 14px; padding-top: 8px;
+}
+h3 {
+  font-size: 16px; font-weight: 600; color: var(--head);
+  margin: 30px 0 10px; letter-spacing: -.005em;
+}
+h4 { font-size: 15px; font-weight: 600; color: var(--head); margin: 18px 0 8px; }
+
+p, ul, ol, table, pre, .note, .tabs { margin-bottom: 16px; }
+ul, ol { padding-left: 20px; }
+li { margin-bottom: 6px; }
+li::marker { color: var(--faint); }
+li > ul, li > ol { margin: 6px 0 0; }
+
+a { color: var(--drive); text-decoration: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--drive) 35%, transparent); }
+a:hover { border-bottom-color: currentColor; }
+
+strong, b { color: var(--head); font-weight: 600; }
+em { color: var(--ink); font-style: italic; }
+
+code {
+  font-family: var(--mono); font-size: .86em;
+  background: var(--raise); border: 1px solid var(--line-soft);
+  border-radius: 5px; padding: .1em .38em; color: var(--head);
+}
+
+pre {
+  position: relative;
+  background: var(--raise); border: 1px solid var(--line);
+  border-radius: 10px; padding: 14px 16px; overflow-x: auto;
+}
+pre code {
+  background: none; border: 0; padding: 0; font-size: 14px; line-height: 1.6;
+  white-space: pre; display: block; color: #C8D6CF;
+}
+
+.copy {
+  position: absolute; top: 8px; right: 8px; padding: 3px 9px;
+  font: inherit; font-size: 11px; font-family: var(--mono);
+  border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--faint); cursor: pointer;
+  opacity: 0; transition: opacity .12s;
+}
+pre:hover .copy, .copy:focus-visible { opacity: 1; }
+.copy:hover { color: var(--drive);
+  border-color: color-mix(in srgb, var(--drive) 45%, transparent); }
+
+/* --- tabs -----------------------------------------------------------------
+ *
+ * For a choice the reader makes once. Three commands side by side asks everyone
+ * to read all three and work out which is theirs; a tab asks once, remembers,
+ * and applies to every group on the page.
+ */
+
+.tabs { max-width: var(--wide); }
+.tabbar {
+  display: flex; gap: 2px; border-bottom: 1px solid var(--line);
+  margin-bottom: 16px; overflow-x: auto; scrollbar-width: none;
+}
+.tabbar::-webkit-scrollbar { display: none; }
+.tabbar button {
+  position: relative; padding: 9px 12px 11px; font: inherit; font-size: 14.5px;
+  border: 0; background: none; color: var(--ink); cursor: pointer;
+  white-space: nowrap;
+}
+.tabbar button:hover { color: var(--head); }
+.tabbar button[aria-selected="true"] { color: var(--drive); }
+.tabbar button[aria-selected="true"]::after {
+  content: ""; position: absolute; left: 6px; right: 6px; bottom: -1px;
+  height: 2px; border-radius: 2px 2px 0 0; background: var(--drive);
+}
+.tab[hidden] { display: none; }
+.tab > :last-child { margin-bottom: 0; }
+.tab > p { max-width: var(--measure); }
+
+/* --- callouts -------------------------------------------------------------- */
+
+.note {
+  border: 1px solid var(--line); border-left: 2px solid var(--drive);
+  border-radius: 0 10px 10px 0; padding: 13px 17px;
+  background: color-mix(in srgb, var(--drive) 5%, transparent);
+  font-size: 15px;
+}
+.note.warn { border-left-color: var(--watch);
+  background: color-mix(in srgb, var(--watch) 6%, transparent); }
+.note.stop { border-left-color: var(--rec);
+  background: color-mix(in srgb, var(--rec) 6%, transparent); }
+.note b {
+  display: block; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--drive); margin-bottom: 4px; font-weight: 600;
+}
+.note.warn b { color: var(--watch); }
+.note.stop b { color: var(--rec); }
+.note :last-child { margin-bottom: 0; }
+.note p { max-width: none; }
+
+/* --- tables ---------------------------------------------------------------- */
+
+table {
+  width: 100%; max-width: var(--wide); border-collapse: collapse;
+  font-size: 14.5px; display: block; overflow-x: auto;
+}
+th, td {
+  text-align: left; padding: 10px 22px 10px 0;
+  border-bottom: 1px solid var(--line-soft); vertical-align: top;
+}
+tr:first-child th { padding-top: 0; }
+th {
+  font-size: 12px; letter-spacing: .06em; color: var(--faint);
+  font-weight: 600; border-bottom-color: var(--line);
+}
+td:first-child { color: var(--head); }
+td code { white-space: nowrap; }
+
+kbd {
+  font-family: var(--mono); font-size: .8em; padding: .12em .45em;
+  border: 1px solid var(--line); border-bottom-width: 2px;
+  border-radius: 5px; background: var(--raise); color: var(--head);
+}
+
+/* --- narrow ---------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  body { font-size: 15.5px; }
+  #doc { padding: 68px 20px 90px; margin-left: 0; }
+  #content { max-width: 100%; }
+  h1 { font-size: 32px; }
+  h2 { font-size: 24px; }
+}
+
+/* The bar stays ONE row at every width, dropping items instead of wrapping.
+   The site's own header wraps to two rows down here, but this page cannot
+   afford that: --hdr is what positions the fixed sidebar and the handle that
+   reopens it, and a height that changes with the viewport would have to be
+   guessed in two places and kept in step by hand. Dropping the least urgent
+   item is the honest version of the same decision. */
+@media (max-width: 720px) {
+  header nav { gap: 16px; }
+  header nav .hide-sm { display: none; }
+}
+@media (max-width: 560px) {
+  header .wrap { gap: 12px; }
+  header nav { gap: 12px; }
+  header nav a#nav-arch, header nav a#nav-install { display: none; }
+  .brand span { display: none; }   /* the mark alone still identifies it */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #doc, #side, #side-open, .copy { transition: none; }
+}

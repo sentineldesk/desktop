@@ -1,0 +1,20 @@
+# SentinelDesk — extra FULL packages that exist only on amd64.
+#
+# Kept apart so an arm64 build does not fail on a package name the archive has
+# never carried. The Dockerfile reads this file only when the build architecture
+# is amd64.
+
+# ── Gaming ────────────────────────────────────────────────────────────────────
+# Steam was 390 MB and amd64-only, and it is what forced non-free components
+# and i386 multiarch into the image. That combination is why it is not in lite.
+#
+# NOTE: this line alone is not enough. Steam needs `dpkg --add-architecture
+# i386`, the contrib/non-free components enabled, and its licence pre-accepted
+# through debconf — see the `full` stage in the Dockerfile, which does that
+# before reading this file.
+steam-installer           # 390 MB, amd64 only
+
+# ── Windows compatibility ─────────────────────────────────────────────────────
+# 733 MB, and it needs the same i386 multiarch Steam does. Only worth carrying
+# on an image where somebody actually runs Windows software.
+wine                      # 733.2 MB, amd64 only

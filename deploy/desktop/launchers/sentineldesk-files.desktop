@@ -1,0 +1,26 @@
+[Desktop Entry]
+# A real launcher, and the reason it exists as a file is worth stating.
+#
+# lxpanel's launchbar can be written two ways: `id=` naming a desktop entry, or
+# `action=` giving a command straight. The second reads better and was what this
+# panel used — but lxpanel cannot PERSIST it. On every start it invented a
+# desktop entry per button, wrote it into ~/.local/share/applications with a
+# random name and mode 0600, and pointed the config at it.
+#
+# Two failures came out of that. The generated file has no executable bit, so
+# libfm refuses to trust it and asks "this text file 'Files' seems to be an
+# executable script — what do you want to do with it?" on every click. And it
+# generated three MORE of them at every boot, forever, into a persistent volume:
+# thirty-nine orphans in the first three days.
+#
+# Icon is an absolute PATH rather than a name, which is the same decision the
+# panel config explains at length: on Raspberry Pi OS, lxpanel resolving a themed
+# icon lands in gtk_icon_theme_choose_icon_for_scale and asserts. A path skips
+# the theme entirely and draws everywhere.
+Type=Application
+Name=Files
+Comment=Browse the files on this desktop
+Exec=thunar
+Icon=/usr/share/icons/Papirus/24x24/apps/system-file-manager.svg
+Terminal=false
+Categories=System;FileTools;FileManager;

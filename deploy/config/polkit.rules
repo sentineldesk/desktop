@@ -1,0 +1,25 @@
+// SentinelDesk
+// A collaborative operating system for people and AI agents.
+//
+// Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+//
+// Licensed under the Apache License, Version 2.0.
+//
+// This product's name and logo are trademarks of Federico Pereira and are not
+// covered by the license above. See the README for the trademark policy.
+//
+// SPDX-License-Identifier: Apache-2.0
+
+
+// polkit — this desktop has no graphical authentication agent.
+//
+// Without this rule any application asking for permissions through polkit
+// (gparted, synaptic, mounting a disk, a file manager in administrator mode)
+// waits for a dialog nobody can answer, and fails with an opaque error.
+// Since the `sentineldesk` user already has passwordless sudo, denying it polkit
+// buys no security: it only breaks the graphical applications.
+polkit.addRule(function(action, subject) {
+    if (subject.isInGroup("sudo") || subject.user == "sentineldesk") {
+        return polkit.Result.YES;
+    }
+});

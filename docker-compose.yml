@@ -1,0 +1,66 @@
+# SentinelDesk
+# A collaborative operating system for people and AI agents.
+#
+# Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+#
+# Licensed under the Apache License, Version 2.0.
+#
+# This product's name and logo are trademarks of Federico Pereira and are not
+# covered by the license above. See the README for the trademark policy.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Run SentinelDesk from the PUBLISHED image — no clone, no build.
+#
+#   curl -fsSLO https://raw.githubusercontent.com/sentineldesk/desktop/main/docker-compose.yml
+#   AUTH_PASS=change-me HOST_IP=<your-ip> docker compose up -d
+#   # → open https://<your-ip>:8080
+#
+# This is the deploy path. To build the image from source instead — for people
+# changing the code — use deploy/docker-compose.dev.yml, which has a `build:`
+# stanza rather than the `image:` line below.
+
+services:
+  sentineldesk:
+    image: cnsoluciones/sentineldesk:${SENTINELDESK_TAG:-latest}   # :full for the heavier apps
+    container_name: sentineldesk
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+      - "3478:3478/udp"                       # the embedded STUN responder
+      - "59000-59049:59000-59049/udp"         # WebRTC media
+    environment:
+      # A login is on by default here — set a real password before exposing it.
+      - AUTH_USER=${AUTH_USER:-admin}
+      - AUTH_PASS=${AUTH_PASS:-change-me}
+      - WEBRTC_MIN_PORT=59000
+      - WEBRTC_MAX_PORT=59049
+      # The address browsers reach this host at. Required off localhost, or the
+      # video connects and stays black: WebRTC would otherwise advertise the
+      # container's bridge IP, which nothing outside can reach. On a public VPS
+      # this is the public IP.
+      - NAT1TO1_IP=${HOST_IP:-127.0.0.1}
+      # HTTPS out of the box with a self-signed certificate (kept in the volume).
+      # The microphone and the rich clipboard only work on a secure origin.
+      - TLS_SELFSIGNED=1
+      - TLS_HOSTS=${HOST_IP:-127.0.0.1}
+      # Put the MCP socket in a mounted directory so an agent on the host —
+      # Claude Code, or sentineldesk-agent — can drive the desktop directly,
+      # without `docker exec`.
+      - MCP_SOCK=/run/sentineldesk/mcp.sock
+    volumes:
+      # Browser profiles, files, the audit log, the TLS certificate — kept
+      # across restarts and upgrades.
+      - sentineldesk-home:/home/sentineldesk
+      # The MCP socket, exposed for a host-side agent (see MCP_SOCK above).
+      - sentineldesk-run:/run/sentineldesk
+    shm_size: "2gb"
+    # The built-in OpenVPN client needs these. Uncomment only if you will use it.
+    # cap_add:
+    #   - NET_ADMIN
+    # devices:
+    #   - /dev/net/tun
+
+volumes:
+  sentineldesk-home:
+  sentineldesk-run:

@@ -1,0 +1,35 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<!-- SentinelDesk
+     A collaborative operating system for people and AI agents.
+
+     Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+
+     Licensed under the Apache License, Version 2.0.
+
+     This product's name and logo are trademarks of Federico Pereira and are not
+     covered by the license above. See the README for the trademark policy.
+
+     SPDX-License-Identifier: Apache-2.0
+
+     Thunar's factory toolbar, arranged the way the Finder arranges its own:
+     navigation, then the split-view toggle, then the three view-mode buttons
+     with the active one held down, then the location bar and search. Thunar
+     persists the whole toolbar in this single property - each entry is
+     item:visible, IN DISPLAY ORDER - so the layout a person sees on first
+     boot is one seeded line, and "Configure Toolbar..." remains the
+     supported way to change it per room, persisting in the room's home like
+     every other choice.
+
+     The view-mode buttons are the point of the exercise: they are the half
+     of the Finder's toolbar that GTK can honestly deliver. The half it
+     cannot - Miller columns, gallery view, tags, grouping, share - is
+     documented as impossible rather than half-built, and no button here
+     pretends otherwise.
+
+     Custom actions (uca-*) are deliberately absent: their identifiers are
+     generated per profile at first run, so a hardcoded one would name an
+     action that does not exist. Thunar appends unknown actions to the end
+     on its own, hidden by default. -->
+<channel name="thunar" version="1.0">
+  <property name="last-toolbar-items" type="string" value="menu:0,back:1,forward:1,open-parent:1,open-home:1,new-tab:0,new-window:0,toggle-split-view:1,undo:0,redo:0,zoom-out:0,zoom-in:0,zoom-reset:0,view-as-icons:1,view-as-detailed-list:1,view-as-compact-list:1,view-switcher:0,location-bar:1,reload:0,search:1"/>
+</channel>

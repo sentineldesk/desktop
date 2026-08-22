@@ -1,0 +1,6 @@
+# Kept out of the build context: the image builds the client itself.
+app/node_modules
+app/tsconfig.tsbuildinfo
+internal/webui/assets
+bin
+dist

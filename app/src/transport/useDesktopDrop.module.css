@@ -1,0 +1,128 @@
+/* SentinelDesk
+ * A collaborative operating system for people and AI agents.
+ *
+ * Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+ *
+ * Licensed under the Apache License, Version 2.0.
+ *
+ * This product's name and logo are trademarks of Federico Pereira and are not
+ * covered by the license above. See the README for the trademark policy.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* The drop veil, over everything in the room pane while a drag hovers. */
+.veil {
+  position: absolute;
+  inset: 8px;
+  z-index: 45;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent, #e05e3d);
+  border-radius: 12px;
+  background: rgb(20 24 33 / 0.72);
+  pointer-events: none;
+}
+
+.veilTag {
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: var(--accent, #e05e3d);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* The transfer tray: one card per file, bottom-right, above the film strip. */
+.tray {
+  position: absolute;
+  right: 16px;
+  bottom: 76px;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(300px, 70vw);
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  padding: 8px 12px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 10px;
+  background: #141821;
+  color: #e8e6e1;
+}
+
+.itemName {
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemSize {
+  font-size: 11px;
+  color: #9a958c;
+}
+
+.barTrack {
+  grid-column: 1 / -1;
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.12);
+  overflow: hidden;
+}
+
+.bar {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #2fbf71;
+  transition: width 0.15s linear;
+}
+
+.barBad {
+  background: #e05252;
+}
+
+/* A delivery waiting on a person: Save (the click that may open a real save
+ * dialog) and a dismiss that leaves the file on the desktop. */
+.itemActions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.itemSave {
+  padding: 3px 12px;
+  border: 1px solid #2fbf71;
+  border-radius: 999px;
+  background: none;
+  color: #2fbf71;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.itemSave:hover {
+  background: rgb(47 191 113 / 0.12);
+}
+
+.itemDismiss {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: #9a958c;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.itemDismiss:hover {
+  color: #e8e6e1;
+}

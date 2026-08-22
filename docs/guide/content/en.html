@@ -1,0 +1,1155 @@
+<!--
+ * SentinelDesk
+ * A collaborative operating system for people and AI agents.
+ *
+ * Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+ *
+ * Licensed under the Apache License, Version 2.0.
+ *
+ * This product's name and logo are trademarks of Federico Pereira and are not
+ * covered by the license above. See the README for the trademark policy.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+-->
+
+
+<section id="getting-started">
+  <h1>SentinelDesk</h1>
+  <p class="lede">A collaborative operating system for people and AI agents. One
+  Linux desktop, in a container, that both of them drive — seeing the same
+  screen, taking turns, and reading each other's errors.</p>
+
+  <p>The second half of that is not a metaphor for an API. It is the same X
+  display, the same session, the same room:</p>
+
+  <ul>
+    <li><b>The agent is a participant</b>, not a background process. It has a
+      name in the list and a pointer on screen in its own colour, so it is never
+      ambiguous whether a colleague or the model just moved the mouse.</li>
+    <li><b>They take turns.</b> Control is claimed, never assumed — by anybody,
+        agent included, and whether or not somebody is watching. Nobody holds the
+        controls until they ask, so joining to watch does not hand you a desktop
+        you did not want. When somebody is driving, asking puts a prompt on their
+        screen and no answer means no.</li>
+    <li><b>They read the same state.</b> Every command run in a terminal reports
+      its exit status, whoever ran it, so a person can hit an error and ask the
+      agent to look at what actually happened.</li>
+    <li><b>One capture, many observers.</b> The desktop is encoded once and
+      fanned out: to every browser, to the recorder, to a live stream. A second
+      participant costs bandwidth, not CPU.</li>
+  </ul>
+
+  <p>People drive it through a control layer in the browser. The agent drives it
+  through a local socket with 134 MCP tools. Neither is a guest of the
+  other.</p>
+
+  <div class="note">
+    <b>New here?</b>
+    <p>Read <a href="#install">Installing it</a> and
+    <a href="#control-layer">The control layer</a>. Everything else is a
+    reference you can come back to.</p>
+  </div>
+</section>
+
+<section id="stack">
+  <h2>What it is built on</h2>
+
+  <p>A single Go binary. GStreamer runs <em>inside</em> the process through
+  go-gst rather than as a child of it, so the encoder stays reachable at
+  runtime — bitrate follows the network, keyframes answer a request, and an
+  external destination attaches without stopping anything.</p>
+
+  <table>
+    <tr><th>Layer</th><th>What it uses</th></tr>
+    <tr><td>Desktop</td><td>Xvfb, Openbox, xfce4-panel, xfdesktop; Chromium,
+      VLC, lxterminal, TigerVNC, FreeRDP</td></tr>
+    <tr><td>Capture</td><td><code>ximagesrc</code> with X DAMAGE tracking, one
+      shared pipeline for the whole room</td></tr>
+    <tr><td>Video</td><td>NVENC → VA-API → x264 → VP8, chosen at startup by
+      running a real probe pipeline for each</td></tr>
+    <tr><td>Audio</td><td>PulseAudio null sink → <code>opusenc</code>; a
+      remapped source so your microphone appears to applications as a real
+      input device</td></tr>
+    <tr><td>Transport</td><td>Pion WebRTC v4, GCC congestion control over TWCC,
+      PLI keyframes, NACK, Opus in-band FEC</td></tr>
+    <tr><td>Human control</td><td>WebSocket signalling and a DataChannel; XTEST
+      injection, XFixes cursors, XShape peer pointers, EWMH</td></tr>
+    <tr><td>Agent control</td><td>MCP over a <code>0600</code> Unix socket,
+      134 tools</td></tr>
+    <tr><td>Reading the screen</td><td>AT-SPI accessibility tree, Chrome
+      DevTools Protocol — structure, not pixels</td></tr>
+    <tr><td>Web interface</td><td><code>go:embed</code>, served with content
+      ETags so a rebuilt image is never served stale</td></tr>
+  </table>
+
+  <p>Typical latency is around <b>50–70 ms</b> glass-to-glass on a LAN, plus the
+  round trip to the server.</p>
+</section>
+
+<section id="capabilities">
+  <h2>What each side can do</h2>
+
+  <h3 id="capabilities-people">A person, from the rail</h3>
+  <ul>
+    <li>Take and release control, and see at a glance who holds it</li>
+    <li>Send their own microphone into the desktop</li>
+    <li><a href="#voice">Talk with the other viewers</a> over a peer-to-peer
+      voice conference the desktop never hears</li>
+    <li>Screenshots and recording to MP4, WebM or MKV, at framebuffer quality</li>
+    <li><a href="#capture-stream-out">Stream the session out</a> to YouTube,
+      Twitch, Facebook, or their own VLC or OBS</li>
+    <li>Move files both ways with a two-pane manager, or by dropping them
+      anywhere on the page</li>
+    <li>A shared clipboard between your machine and the desktop</li>
+    <li>Live statistics: bitrate, frames, packets, how far behind live, and a
+      clock down to milliseconds</li>
+    <li>Full screen, three interface languages, and these docs</li>
+      <li>Pick the stream quality from the rail — Auto, Medium or High</li>
+    <li>A full on-screen keyboard for tablets: Spanish ISO or US ANSI</li>
+    <li>Sign out from the rail when the desktop has a login</li>
+</ul>
+
+  <h3 id="capabilities-agent">An agent, through MCP</h3>
+  <p>134 tools, in families:</p>
+  <table>
+    <tr><th>Family</th><th>What it covers</th></tr>
+    <tr><td>Finding the others</td><td>Describe a task and get back the tools
+      that do it, with their schemas — so the agent does not have to hold all
+      120 in mind at once</td></tr>
+    <tr><td>Pointer and keyboard</td><td>Move, click, drag, scroll, type, key
+      combinations</td></tr>
+    <tr><td>Windows and desktops</td><td>List, activate, move, resize, minimise,
+      maximise, fullscreen, close; virtual desktops; wait for a window to
+      appear</td></tr>
+    <tr><td>Applications and processes</td><td>Launch, list installed, list
+      running, kill, wait until idle</td></tr>
+    <tr><td>Terminal</td><td>Open a terminal the person can watch, run a command
+      in it, read it back — and read the exit code, whoever typed it</td></tr>
+    <tr><td>Shell and SSH</td><td>Persistent shells; SSH sessions, file
+      transfer, key generation, local and remote tunnels</td></tr>
+    <tr><td>Remote desktops</td><td>Open another machine's screen inside this
+      one — RDP, VNC or SPICE — in a window everyone in the room sees; reusable
+      connection profiles with the password stored encrypted</td></tr>
+    <tr><td>Reading the screen</td><td>The accessibility tree, find an element,
+      read its text, wait for one, diff two snapshots; screen text and colour;
+      screenshots of a region</td></tr>
+    <tr><td>Browser</td><td>Chromium through DevTools: open, tabs, navigate,
+      click, type, read text, wait for a selector, evaluate</td></tr>
+    <tr><td>Files and packages</td><td>Read, write, list; search, install and
+      remove packages; control services</td></tr>
+    <tr><td>Capture</td><td>Screenshots, recording, and starting or stopping an
+      external stream</td></tr>
+    <tr><td>The room</td><td>See who is present, ask for control, release
+      it</td></tr>
+    <tr><td>Safety net</td><td>Snapshots it can roll back to, and a log of what
+      it did</td></tr>
+  </table>
+  <p>See <a href="#ai-agent">The AI agent</a> for how to connect one and how to
+  limit what it may do.</p>
+</section>
+
+<section id="install" data-track="install">
+  <h2>Installing and running it</h2>
+
+  <p>Everything runs in one container. There is nothing to install on the
+  machines that connect to it — a browser is the client.</p>
+
+  <h3 id="install-requirements">What you need</h3>
+  <ul>
+    <li><b>Docker</b> with Compose v2. Docker Desktop on macOS and Windows,
+      Docker Engine on Linux.</li>
+    <li><b>2 GB of RAM</b> and two cores for a comfortable 1080p30. A GPU is
+      optional and changes a lot — see <a href="#gpu">Hardware
+      acceleration</a>.</li>
+    <li><b>amd64</b> for Steam and Wine, which are in the
+      <a href="#install-images">full image</a> only. Everything else runs on
+      arm64 too, in both images.</li>
+  </ul>
+
+  <h3 id="install-run">Ways to start it</h3>
+
+  <div class="tabs" data-group="install">
+    <div class="tab" data-label="Installer">
+      <p>The one-command way, on a VPS, a Raspberry Pi or any Linux host. It
+      installs Docker if it is missing, pulls the published image from Docker
+      Hub, and starts the desktop in the background — nothing to clone, nothing
+      to build.</p>
+<pre><code>curl -fsSL https://raw.githubusercontent.com/sentineldesk/desktop/main/install.sh | sudo bash</code></pre>
+      <p>Add <code>--full</code> for the heavier image, <code>--pass &lt;p&gt;</code>
+      to set the password, and <code>--ip &lt;addr&gt;</code> on a public VPS so
+      the video is reachable. <code>--help</code> lists every option.</p>
+    </div>
+
+    <div class="tab" data-label="docker run">
+      <p>Smaller, for a quick look. No TURN, so it works over a LAN or on
+      Linux but may fail to connect through a restrictive NAT.</p>
+<pre><code>docker run -d --name sentineldesk \
+  -p 8080:8080 -p 59000-59049:59000-59049/udp \
+  -e AUTH_USER=admin -e AUTH_PASS=change-me \
+  -e WEBRTC_MIN_PORT=59000 -e WEBRTC_MAX_PORT=59049 \
+  -v sentineldesk-home:/home/sentineldesk \
+  -v sentineldesk-run:/run/sentineldesk \
+  -e MCP_SOCK=/run/sentineldesk/mcp.sock \
+  --shm-size 2g \
+  --cap-add NET_ADMIN --device /dev/net/tun \
+  cnsoluciones/sentineldesk:latest</code></pre>
+      <p>The UDP range is what WebRTC's media travels over. Publishing it and
+      pinning it with the two variables is what makes the connection work
+      without host networking.</p>
+
+      <p>The <code>sentineldesk-run</code> volume and <code>MCP_SOCK</code>
+      expose the agent's MCP socket outside the container, so an agent on the
+      host — Claude Code, or <code>sentineldesk-agent</code> — can drive the
+      desktop directly, without <code>docker exec</code>. Leave them out and the
+      socket stays private to the container.</p>
+
+      <p><b>Watching from another machine</b> — Docker on a VM or a server,
+      the browser somewhere else on the LAN — needs one more variable. By
+      default the container advertises its internal bridge address to WebRTC,
+      which no other machine can reach, and the page stalls at “Establishing
+      WebRTC”. <code>NAT1TO1_IP</code> tells it its outside face — and putting
+      the same address in <code>TLS_HOSTS</code> puts it on the certificate:</p>
+<pre><code>docker run -d --name sentineldesk \
+  -p 8080:8080 -p 59000-59049:59000-59049/udp \
+  -e AUTH_USER=admin -e AUTH_PASS=change-me \
+  -e WEBRTC_MIN_PORT=59000 -e WEBRTC_MAX_PORT=59049 \
+  -e NAT1TO1_IP=192.168.0.100 \
+  -e TLS_HOSTS=192.168.0.100 \
+  -v sentineldesk-home:/home/sentineldesk \
+  -v sentineldesk-run:/run/sentineldesk \
+  -e MCP_SOCK=/run/sentineldesk/mcp.sock \
+  --shm-size 2g \
+  --cap-add NET_ADMIN --device /dev/net/tun \
+  cnsoluciones/sentineldesk:latest</code></pre>
+      <p><code>192.168.0.100</code> stands for the machine running Docker —
+      use its real LAN address, then open
+      <code>https://192.168.0.100:8080</code>.</p>
+
+      <div class="note">
+        <b>HTTPS is the default</b>
+        <p>The desktop serves TLS out of the box: with nothing configured it
+        generates a self-signed certificate once, keeps it in the home volume,
+        and the browser asks you to accept it exactly once. Your own
+        certificate wins via <code>TLS_CERT</code>/<code>TLS_KEY</code>. This
+        is more than the lock icon: browsers only allow the microphone and
+        the rich clipboard on secure origins, so a desktop reached over plain
+        HTTP was quietly missing features.</p>
+        <p>To terminate TLS yourself with a reverse proxy in front — nginx,
+        Caddy, <a href="https://nginxproxymanager.com/">Nginx Proxy
+        Manager</a> — set <code>TLS_SELFSIGNED=0</code> so the backend speaks
+        plain HTTP to the proxy and the proxy serves its own certificate.</p>
+      </div>
+
+      <p>The last two lines are what
+      <a href="#whats-installed-vpn">the VPN client</a> needs: a tunnel device,
+      and the capability to configure routes. Without both, OpenVPN installs
+      fine and then fails at the moment somebody actually needs it. Drop them on
+      a deployment that will never dial a VPN — <code>NET_ADMIN</code> lets the
+      container manage its own network stack, which is a real grant.</p>
+
+      <div class="note">
+        <b>Where <code>seccomp=unconfined</code> went</b>
+        <p>Earlier versions of this page passed
+        <code>--security-opt seccomp=unconfined</code>, and the compose files
+        set it too. Neither does any more. It was there for <b>Steam</b>, whose
+        bootstrap needs user namespaces that Docker's default profile blocks,
+        and Steam is only in the <a href="#whats-installed">full image on
+        amd64</a>. It
+        widens what the container may ask of the kernel, which is not a thing to
+        leave switched on for a feature most installations never start.</p>
+        <p>It has one other effect worth knowing, in the opposite direction:
+        <b>with</b> it, Chromium keeps its own sandbox. The container tests for
+        user namespaces at startup and adds <code>--no-sandbox</code> only when
+        they are missing, so the default is an unsandboxed browser — as it
+        always was. Neither the DevTools protocol nor the accessibility tree
+        changes either way, so the <code>browser_*</code> and <code>ui_*</code>
+        tools behave the same.</p>
+      </div>
+    </div>
+
+    <div class="tab" data-label="docker compose">
+      <p>The same published image, for people who prefer compose. Download the
+      file and bring it up — no clone, no build:</p>
+<pre><code>curl -fsSLO https://raw.githubusercontent.com/sentineldesk/desktop/main/docker-compose.yml
+AUTH_PASS=change-me HOST_IP=192.168.0.100 docker compose up -d</code></pre>
+      <p>Set <code>SENTINELDESK_TAG=full</code> for the full image, and
+      <code>HOST_IP</code> to the address browsers reach this host at (its LAN
+      or public IP). The compose file names <code>cnsoluciones/sentineldesk</code>
+      directly.</p>
+    </div>
+
+    <div class="tab" data-label="From source">
+      <p>To change the code — the contributor path. The image is built from the
+      repository root so the Dockerfile can reach both the Go sources and the
+      desktop assets.</p>
+<pre><code># a fast type check on the host, no container involved
+go build ./...
+# build both variants
+make image
+# or just one of them
+make image-lite
+make image-full
+# or, without make — note the --target
+docker build -f deploy/Dockerfile --target desktop -t sentineldesk:latest .</code></pre>
+      <p><code>--target desktop</code> is not optional. The Dockerfile's last
+      stage is <code>full</code>, so leaving it out builds LibreOffice, Firefox,
+      GIMP, Wireshark and the rest — around 2.5 GB — and then tags that as
+      <code>sentineldesk:latest</code>, a name that means lite everywhere
+      else.</p>
+      <p>The web interface is embedded with <code>go:embed</code>, so editing
+      anything under <code>internal/webui/assets/</code> means rebuilding the
+      image — the change does not appear by reloading the page.</p>
+    </div>
+  </div>
+
+  <h3 id="install-images">The two images</h3>
+
+  <p>One Dockerfile produces both. <b>Lite</b> is the default and is what
+  <code>:latest</code> points at:</p>
+
+  <table>
+    <tr><th>Tag</th><th>Also</th><th>What it is</th></tr>
+    <tr><td><code>cnsoluciones/sentineldesk:&lt;version&gt;-lite</code></td>
+        <td><code>:latest</code>, <code>:lite</code></td>
+        <td>The desktop and the tools somebody needs in it. The default</td></tr>
+    <tr><td><code>cnsoluciones/sentineldesk:&lt;version&gt;-full</code></td>
+        <td><code>:full</code></td>
+        <td>Adds LibreOffice, Firefox, GIMP, Wireshark, a compiler toolchain and
+          Go; on amd64 also Steam and Wine</td></tr>
+  </table>
+
+  <p>To run full instead, point at that tag — one word on
+  <code>docker run</code>, <code>SENTINELDESK_TAG=full</code> with compose, or
+  <code>--full</code> with the installer:</p>
+
+<pre><code>docker run -d --name sentineldesk … cnsoluciones/sentineldesk:full</code></pre>
+
+  <div class="note">
+    <b>Full is built on top of lite</b>
+    <p>So everything in one is in the other, and the two share every layer up to
+    the split: a machine that already has lite downloads only the difference.
+    <a href="#whats-installed">What is installed</a> goes through what each one
+    carries and why.</p>
+  </div>
+
+  <h3 id="install-first-run">The first run</h3>
+  <p>Open <code>https://localhost:8080</code> (self-signed — accept the browser's warning once). With <code>AUTH_USER</code> and
+  <code>AUTH_PASS</code> set it asks for a login; without them it is open.</p>
+
+<pre><code># follow the desktop's logs
+docker logs -f sentineldesk
+# a root shell inside the running container
+docker exec -it -u root sentineldesk bash
+# stop and remove it (the home volume is kept)
+docker rm -f sentineldesk</code></pre>
+  <p>From a source checkout the same three are <code>make logs</code>,
+  <code>make shell</code> and <code>make down</code>.</p>
+
+  <p>The desktop keeps its home in a named volume, <code>sentineldesk-home</code>,
+  so browser profiles, installed applications and the Steam library survive a
+  restart or a rebuild.</p>
+
+  <div class="note warn">
+    <b>Before putting it on the internet</b>
+    <p>Set <code>AUTH_USER</code>, <code>AUTH_PASS</code> and a fixed
+    <code>AUTH_SECRET</code>, and serve it over TLS. See
+    <a href="#production">Production</a>.</p>
+  </div>
+</section>
+
+<section id="configuration" data-track="install">
+  <h2>Configuration</h2>
+
+  <p>Everything is an environment variable. Nothing has to be edited inside the
+  image.</p>
+
+  <h3 id="config-display">Display and video</h3>
+  <table>
+    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>DISPLAY_WIDTH</code> / <code>DISPLAY_HEIGHT</code></td><td>1920 / 1080</td><td>Virtual desktop resolution</td></tr>
+    <tr><td><code>FPS</code></td><td>30</td><td>Frames per second. 60 is worth asking for with a GPU and not without one</td></tr>
+    <tr><td><code>ENCODER</code></td><td>auto</td><td><code>auto</code>, <code>nvenc</code>, <code>vaapi</code>, <code>h264</code> (x264), <code>vp8</code></td></tr>
+    <tr><td><code>VIDEO_BITRATE_KBPS</code></td><td>4000</td><td>A ceiling. The adaptive loop only ever goes lower</td></tr>
+    <tr><td><code>AUDIO_BITRATE</code></td><td>96000</td><td>Opus bitrate, in bits per second</td></tr>
+    <tr><td><code>REMOTE_CURSOR</code></td><td>0</td><td><code>1</code> draws the pointer on the server — more faithful, and it feels slower</td></tr>
+    <tr><td><code>WALLPAPER</code></td><td>—</td><td>Pin one image on every workspace</td></tr>
+  </table>
+
+  <h3 id="config-region">Clock and keyboard</h3>
+  <p>Both are read when the desktop starts, so one image serves every region and
+  neither is baked in.</p>
+  <table>
+    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>TZ</code></td><td>America/<wbr>Argentina/<wbr>Buenos_Aires</td><td>Any tzdata name — <code>Europe/Madrid</code>, <code>UTC</code>…</td></tr>
+    <tr><td><code>KEYBOARD_LAYOUT</code></td><td>us</td><td>An X layout code: <code>us</code>, <code>es</code> (Spain), <code>latam</code>, <code>pt</code>, <code>fr</code>, <code>de</code>…</td></tr>
+    <tr><td><code>KEYBOARD_VARIANT</code></td><td>—</td><td>An optional variant of that layout, passed through untouched</td></tr>
+  </table>
+    <p>Neither dropping nor uploading needs the controls: handing the room a
+  file is provisioning, not driving. Deleting, renaming or moving what is
+  already there does need them.</p>
+
+  <p>A value that is spelled wrong is reported and ignored rather than
+  half-applied — see <a href="#whats-installed-region">clock and keyboard</a>.</p>
+
+  <h3 id="config-session">Session and access</h3>
+  <table>
+    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>AUTH_USER</code> / <code>AUTH_PASS</code></td><td>—</td><td>Login. Both empty means no authentication — development only. Setting <b>only one refuses to start</b>: half a login is a typo, and the desktop it used to produce was an open one</td></tr>
+    <tr><td><code>AUTH_SECRET</code></td><td>random</td><td>HMAC key for session tokens. Pin it or every restart signs everyone out</td></tr>
+    <tr><td><code>AUTH_TTL_HOURS</code></td><td>12</td><td>How long a session lasts</td></tr>
+    <tr><td><code>MAX_VIEWERS</code></td><td>4</td><td>How many people may share one desktop</td></tr>
+    <tr><td><code>FILES_ROOT</code></td><td>/home/sentineldesk</td><td>What the file manager may reach</td></tr>
+    <tr><td><code>HTTP_PORT</code></td><td>8080</td><td>Port for the web client and signalling</td></tr>
+    <tr><td><code>HTTP_ADDR</code></td><td>—</td><td>Which interface to listen on. Empty means all of them. Set it to <code>127.0.0.1</code> when something else terminates TLS in front, or the backend keeps answering in the clear beside the proxy</td></tr>
+  </table>
+
+  <h3 id="config-network">Network and ICE</h3>
+  <table>
+    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>WEBRTC_MIN_PORT</code> / <code>WEBRTC_MAX_PORT</code></td><td>—</td><td>A fixed UDP range for ICE, so it can be published and firewalled</td></tr>
+    <tr><td><code>NAT1TO1_IP</code></td><td>—</td><td>The public IP to advertise when the server is behind NAT</td></tr>
+    <tr><td><code>STUN_EMBEDDED</code></td><td>1</td><td>The desktop answers STUN itself on <code>STUN_PORT</code> (publish the UDP port); <code>0</code> disables it</td></tr>
+    <tr><td><code>STUN_PORT</code></td><td>3478</td><td>The embedded responder's UDP port</td></tr>
+    <tr><td><code>STUN_SERVER</code></td><td>Google's</td><td>STUN used by the server</td></tr>
+    <tr><td><code>CLIENT_STUN</code></td><td>Google's</td><td>STUN handed to the browser</td></tr>
+    <tr><td><code>CLIENT_TURN_URLS</code></td><td>—</td><td>TURN handed to the browser, comma separated</td></tr>
+    <tr><td><code>TURN_USER</code> / <code>TURN_PASS</code></td><td>—</td><td>Credentials for that TURN</td></tr>
+  </table>
+  <p>The desktop answers STUN by itself, on by default: publish
+  <code>3478/udp</code> and a browser arriving from outside asks the desktop
+  — at the same hostname it loaded it from — "what is my address?", with no
+  third-party server in the path. It answers Binding requests only,
+  rate-limited per IP, and relays nothing.</p>
+
+
+  <h3 id="config-tls">TLS</h3>
+  <table>
+    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>TLS_SELFSIGNED</code></td><td>0</td><td><code>1</code> generates a certificate once and keeps it in the volume</td></tr>
+    <tr><td><code>TLS_CERT</code> / <code>TLS_KEY</code></td><td>—</td><td>Paths to your own certificate and key</td></tr>
+    <tr><td><code>TLS_HOSTS</code></td><td>—</td><td>Extra names on the self-signed certificate: IPs or domains, comma separated</td></tr>
+  </table>
+
+  <h3 id="config-mcp">The AI agent</h3>
+  <table>
+    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>MCP_POLICY</code></td><td>full</td><td><code>full</code>, <code>approve</code> (dangerous tools ask the room), <code>safe</code> (no tools that run code or touch the system), <code>readonly</code></td></tr>
+    <tr><td><code>MCP_DENY</code> / <code>MCP_ALLOW</code></td><td>—</td><td>Patterns, for finer control than the four levels</td></tr>
+    <tr><td><code>AGENT_NAME</code></td><td>AI agent</td><td>The name the agent appears under in the participant list</td></tr>
+  </table>
+
+  <h3 id="config-tuning">Tuning</h3>
+  <p>Defaults that are right almost always. Each one exists because a specific
+  thing went wrong without it.</p>
+  <table>
+    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>MIN_VIDEO_BITRATE_KBPS</code></td><td>1200</td><td>A floor under the adaptive loop. A client that cannot <em>decode</em> fast enough looks like a congested network, and without a floor the estimator keeps lowering the target until the picture is worthless to everyone</td></tr>
+    <tr><td><code>USE_DAMAGE</code></td><td>1</td><td>X DAMAGE tracking. With it off, the capture re-reads the whole framebuffer every frame even when nothing changed. Set to <code>0</code> only for a driver where it misbehaves</td></tr>
+    <tr><td><code>SOFTWARE_SCALE_HEIGHT</code></td><td>0</td><td>Encode at a smaller height and let the browser scale it back up. Only useful on a host too slow for 1080p in software; <code>0</code> is off</td></tr>
+    <tr><td><code>RECORD_THREADS</code></td><td>2</td><td>Encoder threads for <em>recordings</em>, which only have to keep pace with the framerate rather than finish each frame quickly. The encoder's own default is sized from the core count and costs roughly twice the CPU for the same frames on a large host. Raise it if a recording drops frames on a slow one</td></tr>
+    <tr><td><code>AUDIO_DEVICE</code></td><td>sentineldesk.monitor</td><td>The PulseAudio source the capture reads</td></tr>
+    <tr><td><code>DISPLAY</code></td><td>:0</td><td>The X display to capture</td></tr>
+    <tr><td><code>TLS_DIR</code></td><td>/home/sentineldesk/.tls</td><td>Where the self-signed certificate is kept. Inside the volume, so it survives</td></tr>
+    <tr><td><code>ACTION_LOG</code></td><td>—</td><td>A file to append every tool the agent runs to. Off unless set</td></tr>
+    <tr><td><code>MCP_SOCK</code></td><td>—</td><td>Where the MCP socket lives. Also settable with <code>-mcp-sock</code></td></tr>
+  </table>
+
+  <div class="note">
+    <b>The resolution is not the binary's to change</b>
+    <p><code>DISPLAY_WIDTH</code> and <code>DISPLAY_HEIGHT</code> are read by
+    Xvfb when it starts, not by the server. That is why the desktop can be
+    resized smaller at runtime but never larger than what was reserved at boot —
+    and why changing them means restarting the container.</p>
+  </div>
+
+  <h3 id="config-flags">Command-line flags</h3>
+  <p>The binary takes nine. Five are about the AI side; the other four make the binary its own distribution. Everything
+  else is an environment variable, because everything else is configuration of a
+  service rather than a choice made per invocation.</p>
+  <table>
+    <tr><th>Flag</th><th>Description</th></tr>
+    <tr><td><code>-mcp-sock &lt;path&gt;</code></td><td>The Unix socket the MCP server listens on. Empty means the MCP server does not start at all. Defaults to <code>MCP_SOCK</code></td></tr>
+    <tr><td><code>-mcp-stdio</code></td><td>Run as the stdio bridge instead of as the desktop: it connects to <code>-mcp-sock</code> and relays JSON-RPC between the AI host's stdin/stdout and that socket</td></tr>
+    <tr><td><code>-mcp-policy &lt;level&gt;</code></td><td><code>full</code>, <code>safe</code> or <code>readonly</code> — for this bridge only</td></tr>
+    <tr><td><code>-mcp-deny &lt;list&gt;</code></td><td>Tools this bridge may not use, comma separated. A trailing <code>*</code> matches a prefix</td></tr>
+    <tr><td><code>-mcp-allow &lt;list&gt;</code></td><td>An exclusive allow-list for this bridge</td></tr>
+    <tr><td><code>-version</code></td><td>Print version, commit and build date, and exit</td></tr>
+  </table>
+
+  <p>The last three restrict <b>one connection</b>, on top of whatever
+  <code>MCP_POLICY</code> already allows. A bridge can narrow itself but never
+  widen — which is what makes it safe to hand one agent a read-only endpoint
+  without changing anything for anyone else:</p>
+
+<pre><code>docker exec -i -u sentineldesk sentineldesk \
+  /usr/local/bin/sentineldesk -mcp-stdio \
+  -mcp-sock /run/user/1000/sentineldesk-mcp.sock \
+  -mcp-policy safe -mcp-deny 'ssh_*,install_packages'</code></pre>
+</section>
+
+<section id="gpu" data-track="install">
+  <h2>Hardware acceleration</h2>
+
+  <p>The encoder is chosen at startup by running a real probe pipeline for each
+  candidate in turn, so what you get reflects what actually works on that host
+  rather than what the drivers claim. Force one with
+  <code>ENCODER=nvenc|vaapi|h264|vp8</code>.</p>
+
+  <p>To use a GPU, pass the device into the container. For VA-API add
+  <code>--device /dev/dri</code> and the probe picks it by itself. NVENC needs
+  the NVIDIA Container Toolkit and <code>--gpus all</code>; without a usable GPU
+  the desktop falls back to software encoding.</p>
+
+  <div class="note">
+    <b>Why x264 and not VP8 without a GPU</b>
+    <p>Measured on desktop content, libx264 at <code>veryfast</code> carries
+    1080p for roughly a third of what <code>vp8enc</code> needs, and H.264 is
+    what every browser decodes in hardware. That matters on the receiving side
+    too: a client that cannot keep up looks like a congested network to the
+    congestion estimator, and drags the whole room's bitrate down.</p>
+  </div>
+</section>
+
+<section id="production" data-track="install">
+  <h2>Production</h2>
+
+  <h3 id="production-security">The security model</h3>
+  <p>It is short enough to state in one line: <b>the WebSocket is the only
+  door.</b></p>
+  <p>The first WebSocket frame has to be an authentication frame with a username
+  and password, or a session token. Until it validates there is no WebRTC
+  handshake at all — no SDP offer, no ICE, no DataChannel. An invalid token, an
+  offer trying to skip authentication, or silence past the ten-second deadline
+  closes the connection.</p>
+  <p>Repeated failures from one origin are rate-limited and then banned for a
+  while, so a password is not something that can be guessed at speed.</p>
+  <ul>
+    <li>Set <code>AUTH_SECRET</code> to a fixed value. Left unset it is random,
+      and every restart invalidates everyone's session.</li>
+    <li><code>FILES_ROOT</code> bounds what the file manager can reach. Leave it
+      inside the home unless you mean otherwise.</li>
+    <li>Downloads travel with a one-time ticket in the URL rather than the
+      session token, so a link that leaks is already spent.</li>
+    <li>The MCP socket is <code>0600</code> and local to the container. It is
+      never exposed over the network.</li>
+  </ul>
+
+  <h3 id="production-tls">TLS</h3>
+  <p>The desktop serves HTTPS itself. With nothing set it generates a
+  self-signed certificate on first start and keeps it in the home volume;
+  <code>TLS_HOSTS</code> puts the right names on it. To use your own, pass
+  <code>TLS_CERT</code> and <code>TLS_KEY</code> (one without the other refuses
+  to start). To terminate TLS in a reverse proxy in front — nginx, Caddy — set
+  <code>TLS_SELFSIGNED=0</code> so the backend speaks plain HTTP to the proxy.
+  Either way the client switches to <code>wss://</code> on its own. This matters
+  beyond the lock icon: the microphone and the rich clipboard only work on a
+  secure origin.</p>
+
+  <h3 id="production-ports">Ports and NAT</h3>
+  <table>
+    <tr><th>Port</th><th>Protocol</th><th>What for</th></tr>
+    <tr><td>8080</td><td>TCP</td><td>The web interface and the WebSocket</td></tr>
+    <tr><td>3478</td><td>UDP</td><td>The embedded STUN responder</td></tr>
+    <tr><td>59000–59049</td><td>UDP</td><td>WebRTC media — pin the range with
+      <code>WEBRTC_MIN_PORT</code> / <code>WEBRTC_MAX_PORT</code></td></tr>
+  </table>
+
+  <p>If the host sits behind NAT and does not hold its reachable address on its
+  own interface — a cloud VPS, or Docker on a VM — set <code>NAT1TO1_IP</code>
+  to that address (its LAN or public IP) so WebRTC advertises something a
+  browser can reach. Without it the browser is handed the container's bridge
+  address and the video connects and stays black.</p>
+
+  <div class="note">
+    <b>TURN on macOS and Windows</b>
+    <p>Docker Desktop runs the container inside a VM, so the addresses ICE
+    discovers are the VM's and not reachable, and a direct connection may not
+    form. A TURN relay closes that gap — point the browser at one with
+    <code>CLIENT_TURN_URLS</code> (and <code>TURN_USER</code> /
+    <code>TURN_PASS</code>). On a Linux host with the ports above published,
+    none of this is needed.</p>
+  </div>
+</section>
+
+<section id="updating" data-track="install">
+  <h2>Updating and state</h2>
+
+  <p>Rebuilding replaces the image; it does not touch the home.</p>
+
+<pre><code>git pull
+make up</code></pre>
+
+  <p>What survives lives in the named volume <code>sentineldesk-home</code>:
+  browser profiles, applications you installed, the Steam library, the
+  self-signed certificate. What does not is anything written outside the home
+  inside the container — that goes with the old image.</p>
+
+  <p>To start over, and lose all of it:</p>
+<pre><code>make down
+docker volume rm sentineldesk-home</code></pre>
+
+  <div class="note">
+    <b>A rebuilt image but the old interface</b>
+    <p>That should not happen: the client is served with an ETag over its own
+    bytes, so the browser has to revalidate. If it does, confirm the container
+    was recreated rather than restarted — <code>make up</code> rebuilds and
+    recreates.</p>
+  </div>
+</section>
+
+<section id="control-layer" data-track="use">
+  <h2>The control layer</h2>
+
+  <p>Everything you operate lives in a rail on the left of the browser window.
+  It floats over live video of a real desktop, so it is deliberately frosted
+  rather than solid: what it covers is desktop you stop seeing.</p>
+
+  <p>Press <kbd>º</kbd> to show and hide it. That key never reaches the remote
+  desktop.</p>
+
+  <table>
+    <tr><th>Group</th><th>What is in it</th></tr>
+    <tr><td>Capture</td><td>Microphone, screenshot, recording,
+      <a href="#capture-stream-out">stream out</a></td></tr>
+    <tr><td>Session</td><td>Files, audio on/off, statistics</td></tr>
+    <tr><td>Viewer</td><td>Full screen, language</td></tr>
+  </table>
+
+  <p>Windows of this layer — the file manager, statistics, streaming — stay open
+  while you use the rail, can be dragged by their title bar, and close only from
+  their own <b>×</b>. Double-clicking the title bar re-centres one that ended up
+  somewhere awkward.</p>
+</section>
+
+<section id="sharing-session" data-track="use">
+  <h2>Sharing the session</h2>
+
+  <p>One desktop, several participants. The model is a shared console: exactly
+  <b>one participant holds control</b> at a time and everyone else watches. The
+  capture is encoded once and sent to all of them, so a second viewer costs
+  bandwidth, not CPU.</p>
+
+  <h3 id="sharing-control">Taking and releasing control</h3>
+  <p>The presence panel at the top of the rail says which of three states you
+  are in: you are driving, somebody else is, or nobody is. Control is
+  cooperative between people — anyone may take it, and whoever had it sees the
+  change immediately. There is no hierarchy, because everyone got in with the
+  same credential.</p>
+
+  <p><b>Joining does not give you the controls.</b> The desktop starts with
+  nobody driving and stays that way until somebody asks, so opening it to watch
+  a colleague work is a thing you can do without taking the machine out from
+  under them. Press <b>Take control</b> when you actually want it.</p>
+
+  <p><b>Releasing frees the controls; it does not hand them to the next
+  person.</b> "I have finished" and "you are up now" are different statements,
+  and only the first one is ever true. The same holds if the person driving
+  simply closes their tab: the controls go free rather than landing on whoever
+  happens to have been there longest.</p>
+
+  <div class="note">
+    <b>The floating bar</b>
+    <p>A bar at the bottom of the screen tells everyone which way things stand,
+    and it carries the button: <b>green</b> when the controls are free, amber
+    when somebody else is driving. It stays for as long as that is true instead
+    of flashing past — the moment the agent finishes a task is exactly when you
+    might be looking somewhere else.</p>
+  </div>
+
+
+  <h3 id="sharing-inks">Who is who: inks and pointers</h3>
+  <p>Every participant gets a colour on arrival — yellow first, then cyan,
+  magenta and near-black — and <b>violet always means the AI agent</b>,
+  never a person. The roster's dots wear it, and so does the pointer: while
+  you are watching, your mouse over the desktop is drawn there for everyone
+  else, named and in your ink, so pointing at things works without taking
+  the controls. Recordings and outbound streams include those pointers,
+  because they are drawn on the desktop itself.</p>
+
+  <h3 id="sharing-agent">The AI agent's turn</h3>
+  <p>The agent is a participant like any other: a name in the list and a pointer
+  on screen in its own colour, so it is never ambiguous whether a colleague or
+  the model just moved the mouse.</p>
+
+  <p>The rule is one line: <b>control is claimed, never assumed.</b> That holds
+  for the agent whether or not anybody is watching — an empty room used to be a
+  free pass, and it is not one any more. Asking costs the agent nothing when the
+  controls are free, because the answer comes back immediately; what it buys is
+  a room that always knows who has the desktop. When somebody IS driving, the
+  agent has to ask them — a prompt appears on
+  your screen with a draining timer, and no answer means no.</p>
+
+  <div class="note">
+    <b>Reading each other's errors</b>
+    <p>Every command run in a terminal on this desktop reports its exit status,
+    whoever ran it. So a person can hit an error, ask the agent to look at it,
+    and the agent reads what actually happened instead of being told about it
+    second-hand.</p>
+  </div>
+</section>
+
+<section id="capture-recording" data-track="use">
+  <h2>Screenshots and recording</h2>
+
+  <p>Both are in the Capture group, and both go through the <b>server</b> rather
+  than the browser. That means the file comes out at the framebuffer's own
+  quality, without the stream's compression — and as MP4, which opens on any
+  operating system with nothing installed. WebM and MKV are available too.</p>
+
+  <p>Other participants' pointers are drawn onto the X display itself, so they
+  appear in screenshots and recordings the same way they appear on screen.</p>
+</section>
+
+<section id="capture-stream-out" data-track="use">
+  <h2>Streaming the desktop out</h2>
+
+  <p><b>Stream out</b> in the Capture group sends the live session somewhere
+  else: YouTube, Twitch or Facebook with just a stream key, or a full address
+  for a VLC or OBS you run yourself.</p>
+
+  <p>It reuses the encode the room is already producing. Going live does not
+  interrupt what anyone is watching, and an extra destination costs a muxer and
+  a socket rather than a second capture of the screen. The multiplier that is
+  real is bandwidth: each destination carries the full stream out of the
+  machine.</p>
+
+  <p>Whoever holds control decides, and everyone in the room sees the
+  destination list — a session being broadcast is not something to find out
+  about afterwards. Stream keys are redacted before they reach any browser or
+  log.</p>
+
+  <h3 id="stream-out-platforms">YouTube, Twitch, Facebook</h3>
+  <p>Pick the platform and paste <b>only the stream key</b>. The ingest address
+  is already known, so there is nothing to look up.</p>
+
+  <h3 id="stream-out-vlc">Watching it in VLC</h3>
+
+  <p>Two steps, in this order: <b>start VLC listening first</b>, then press
+  <em>Go live</em>. If nothing is listening, the desktop has nowhere to send to.</p>
+
+  <p><b>Step 1 — put VLC in listening mode on your own machine:</b></p>
+
+  <div class="tabs" data-group="os">
+    <div class="tab" data-label="macOS">
+      <p>VLC installs no <code>vlc</code> command; call the binary inside the
+      application.</p>
+      <pre><code>"/Applications/VLC.app/Contents/MacOS/VLC" \
+  --network-caching=200 "udp://@:5000"</code></pre>
+    </div>
+    <div class="tab" data-label="Linux">
+      <pre><code>vlc --network-caching=200 "udp://@:5000"</code></pre>
+    </div>
+    <div class="tab" data-label="Windows">
+      <p>From PowerShell or the command prompt:</p>
+      <pre><code>"C:\Program Files\VideoLAN\VLC\vlc.exe" ^
+  --network-caching=200 "udp://@:5000"</code></pre>
+    </div>
+  </div>
+
+  <p>The <code>@</code> is what makes VLC <em>listen</em> instead of connect —
+  without it, nothing happens and no error is printed.
+  <code>--network-caching=200</code> drops VLC's own buffer from one second to
+  200 ms; leave it out and you will blame the streaming for a delay that is
+  VLC's.</p>
+
+  <p>You can check it really is listening:</p>
+<pre><code># Linux / macOS — should show UDP *:5000, not a random high port
+lsof -nP -iUDP:5000</code></pre>
+
+  <p><b>Step 2 — in the rail, choose <em>VLC / OBS</em> and enter the
+  address:</b></p>
+
+  <table>
+    <tr><th>Where Docker runs</th><th>Address to use</th></tr>
+    <tr><td>Docker Desktop, same machine as VLC (macOS, Windows)</td>
+        <td><code>udp://host.docker.internal:5000</code></td></tr>
+    <tr><td>Docker on Linux, same machine as VLC</td>
+        <td><code>udp://172.17.0.1:5000</code></td></tr>
+    <tr><td>A different machine</td>
+        <td><code>udp://&lt;that machine's IP&gt;:5000</code></td></tr>
+  </table>
+
+  <p>Leave <em>Viewers can join mid-stream</em> unchecked. It is your own
+  receiver — it does not need a keyframe every two seconds, and the bits saved
+  go back into keeping text readable.</p>
+
+  <div class="note stop">
+    <b>Why udp:// and not srt:// for VLC</b>
+    <p>VLC 3 speaks SRT only as a <em>caller</em>: it can connect out, but it
+    cannot receive a connection, and <code>?mode=listener</code> is silently
+    ignored. Point SentinelDesk at it over SRT and both sides end up calling,
+    neither answers, and nothing is logged because nothing failed. Use
+    <code>udp://</code> for VLC.</p>
+  </div>
+
+  <h3 id="stream-out-obs">Watching it in OBS</h3>
+  <p>Add a <b>Media Source</b>, untick <em>Local File</em>, and put the same
+  <code>udp://@:5000</code> in the input box. OBS is happy with
+  <code>srt://</code> too, in listener mode.</p>
+
+  <h3 id="stream-out-protocols">Which protocol to use</h3>
+  <table>
+    <tr><th>Scheme</th><th>Use it for</th></tr>
+    <tr><td><code>udp://</code></td><td>A player on your network. Works
+      everywhere, nothing to negotiate.</td></tr>
+    <tr><td><code>srt://</code></td><td>A receiver over the internet that
+      <em>listens</em>: an SRT server, OBS in listener mode. Recovers from
+      packet loss; pointless on a LAN.</td></tr>
+    <tr><td><code>rtmp://</code>, <code>rtmps://</code></td><td>The platforms.
+      Elderly and awkward, and the only thing they accept.</td></tr>
+  </table>
+
+  <h3 id="stream-out-keyframes">About keyframes</h3>
+  <p>A viewer cannot see anything until a keyframe arrives, so a platform
+  serving an audience that turns up at arbitrary moments needs one every two
+  seconds. That is enforced automatically while such a destination is
+  connected, and it goes back to on-demand the moment the last one stops.</p>
+
+  <p>Keyframes are ten to fifty times the size of a normal frame, and every bit
+  they take is a bit not spent on the text on your screen. A receiver you start
+  yourself can simply wait for the first one, which is why it gets a sharper
+  picture.</p>
+
+  <div class="note warn">
+    <b>H.264 only</b>
+    <p>No streaming destination accepts VP8. Encoder auto-detection prefers
+    x264 over VP8, so this is normally already true; on a host where it is not,
+    set <code>ENCODER=x264</code>.</p>
+  </div>
+
+  <h3 id="stream-out-address">The address is remembered</h3>
+  <p>What you type is kept in this browser, per destination, so reopening the
+  panel mid-stream shows what is being sent and stopping does not mean pasting
+  a stream key again. It is stored the way a browser stores a password: on this
+  machine, for this site, and nowhere else.</p>
+</section>
+
+<section id="file-transfer" data-track="use">
+  <h2>Moving files</h2>
+
+  <p><b>Files</b> in the Session group opens a two-pane manager: the remote
+  desktop on the left, your own machine on the right. Function keys along the
+  bottom do the usual things — <kbd>F5</kbd> copy, <kbd>F6</kbd> rename,
+  <kbd>F7</kbd> new folder, <kbd>F8</kbd> delete, <kbd>F2</kbd> refresh.</p>
+
+  <p>You can also <b>drop files anywhere on the page</b> to send them to the
+  desktop, without opening the manager at all.</p>
+
+  <p>Downloads travel with a one-time ticket in the URL rather than your session
+  token, so a link that leaks is spent and useless.
+  <code>FILES_ROOT</code> bounds what the manager can reach.</p>
+</section>
+
+<section id="microphone" data-track="use">
+  <h2>Your microphone, on the desktop</h2>
+
+  <p><b>Microphone</b> in the Capture group sends your microphone into the
+  container, where applications see it as a real input device — not as a
+  monitor of something playing, which browsers hide from their microphone
+  pickers. Which one it uses is chosen in <b>Settings</b> — the gear in the
+  rail, or a right-click on the button.</p>
+
+  <p>Only the participant holding control may publish audio. Your voice
+  becomes part of the desktop: applications, recordings and outgoing streams
+  all hear it. For talking with the other people in the room without the
+  desktop hearing a word, see <a href="#voice">Voice</a>.</p>
+</section>
+
+<section id="voice" data-track="use">
+  <h2>Voice, among the people watching</h2>
+
+  <p><b>Voice</b> in the Session group is the other conversation: a voice
+  conference among the people in the room, browser to browser. The desktop
+  never hears it — recordings, outgoing streams and the applications inside
+  carry no trace of it. Picture four people narrating a video that plays on
+  the shared screen: the commentary is Voice; the video's own sound stays on
+  the desktop.</p>
+
+  <p>It is opt-in per person, like a walkie-talkie: pressing your own button
+  captures your microphone and announces you, and switches nobody else on.
+  Whoever else has Voice active connects to you <b>directly, peer to peer</b>
+  — the audio travels between browsers, and the server only relays the
+  sealed handshake envelopes without reading them. With three or four people
+  it is a mesh: every pair holds its own connection, everyone hears
+  everyone.</p>
+
+  <p>Alone in the conference nothing sounds: the counter on the button shows
+  how many peers are connected, and <b>0</b> is a waiting state, not a
+  fault. Order does not matter either — whoever activates Voice later
+  announces themselves and the pairs form on their own. Pressing the button
+  again leaves the conference and releases your microphone.</p>
+
+  <p>Which device each conversation uses — the desktop's microphone and the
+  conference's — is chosen in <b>Settings</b>, where a level meter and a
+  self-listen test answer "does this one hear me" before anybody else has
+  to. Voice needs no control and no turn: watching is enough. It is the
+  conversation <i>about</i> the desktop, not with it.</p>
+</section>
+
+
+<section id="settings" data-track="use">
+  <h2>Settings: your devices and your name</h2>
+
+  <p>The gear in the Session group — or a right-click on <b>Microphone</b> —
+  opens Settings. It answers the two questions every call ends up asking:
+  which device, and does it hear me.</p>
+
+  <p><b>Microphone</b> and <b>Voice</b> are chosen separately, because they
+  are different acts — the desktop's own input and the viewers' conference —
+  and somebody with a headset and a desk mic genuinely wants them apart. The
+  level meter follows whichever picker you touched last; <b>Hear myself</b>
+  loops your own voice to the chosen output (headphones are kinder), and the
+  speaker test plays a chime on the output you picked. Choices are remembered
+  per browser and take effect immediately, even mid-session.</p>
+
+  <p><b>Your name</b> lives here too: letters, digits, space, dash and
+  underscore. It shows in the roster, in the session's audit record, and on
+  the pointer tag the others see — set it once and the room stops calling
+  you "Viewer 2".</p>
+</section>
+
+<section id="on-screen-keyboard" data-track="use">
+  <h2>The on-screen keyboard</h2>
+
+  <p><b>Keyboard</b> in the Viewer group docks a full board at the bottom of
+  the screen — made for tablets, useful anywhere. Two layouts (<b>ES</b>,
+  Spanish ISO with ñ, ç and the dead keys; <b>EN</b>, US ANSI), a numeric
+  pad and navigation cluster behind the <b>123</b> switch, and a compact
+  <b>Mini</b> variant. The <b>—</b> button tucks the board into a small pill
+  at the bottom centre; tap the pill to bring it back.</p>
+
+  <p>Accents compose the way a phone keyboard does: tap <b>´</b> and then a
+  vowel and one á arrives — tap the accent twice for the literal character.
+  Shift, Ctrl, Alt and AltGr are latches: tap one, tap a key, and the chord
+  travels. The <b>monitor key</b> is this desktop's ⊞ — one tap opens the
+  applications menu.</p>
+
+  <p>On a touch screen the desktop itself is direct manipulation: one finger
+  is the pointer with the left button held, two fingers scroll, and a quick
+  two-finger tap is the right button.</p>
+
+  <p>With the board open, a real keyboard <b>lights its own keys on it</b> as
+  you type — the same red a touch press shows. It is a live "this is how I
+  write", and it confirms at a glance that the keys are landing.</p>
+</section>
+
+
+<section id="webmcp" data-track="use">
+  <h2>The browser's own AI can drive it</h2>
+
+  <p>Beyond the agent that connects over MCP, the desktop offers a set of
+  tools to <b>whatever AI the browser itself carries</b> — the emerging
+  "model context" API that Chrome's built-in Gemini reads. Nothing to
+  install and no key to paste: from the moment you are signed in and
+  connected, the page publishes its tools, and the browser's model can act
+  through them.</p>
+
+  <p>The tools do exactly what <b>you</b> do, over exactly your path: type,
+  press keys, move and click the pointer, scroll, set the clipboard, take a
+  screenshot, list and organise files, set the quality, take or release the
+  controls. They travel the authenticated DataChannel your own clicks take —
+  no separate endpoint, no second login. So the browser's AI reaches exactly
+  as far as you can and no further: anything that writes to the desktop waits
+  until the controls are held, and asks the model to take them first.</p>
+
+  <p>The tools appear when the session is live and disappear when it ends.</p>
+</section>
+
+<section id="ai-agent" data-track="use">
+  <h2>The AI agent</h2>
+
+  <p>SentinelDesk exposes <b>134 tools</b> over a local Unix socket using the
+  Model Context Protocol. An AI host — Claude Code, Claude Desktop, or anything
+  else that speaks MCP — connects through a thin bridge:</p>
+
+<pre><code>docker exec -i sentineldesk sentineldesk -mcp-stdio</code></pre>
+
+  <p>Killing the AI host does not take the desktop down with it. The socket is
+  <code>0600</code> and local to the container.</p>
+
+  <h3 id="ai-agent-connect">Connecting one</h3>
+  <p>The bridge is a sub-command of the same binary, run through
+  <code>docker exec</code>. In your MCP client's configuration:</p>
+<pre><code>{
+  "mcpServers": {
+    "sentineldesk": {
+      "command": "docker",
+      "args": [
+        "exec", "-i", "-u", "sentineldesk", "sentineldesk",
+        "/usr/local/bin/sentineldesk", "-mcp-stdio",
+        "-mcp-sock", "/run/user/1000/sentineldesk-mcp.sock"
+      ]
+    }
+  }
+}</code></pre>
+  <p><code>-i</code> keeps stdin open, which is the transport;
+  <code>-u sentineldesk</code> runs as the socket's owner.</p>
+
+  <p>The tools cover the mouse and keyboard, windows, running commands,
+  screenshots and recording, the browser through DevTools, the accessibility
+  tree — so the agent can read what is on screen as structure rather than as
+  pixels — files, packages, SSH, and the room itself.</p>
+
+  <h3 id="ai-agent-search">Finding the right tool</h3>
+  <p>A hundred and twenty tool descriptions is a real amount of a model's
+  attention, spent before it has read your request. <code>tool_search</code> is
+  the way around it: describe the task and get back the handful of tools that do
+  it, with their input schemas attached so they can be called straight away.</p>
+
+<pre><code>{"name": "tool_search", "arguments": {"query": "give someone remote access"}}</code></pre>
+
+  <p>That returns the <code>ssh_*</code> tools, ranked, each with its risk level
+  and its schema. Ask for a whole theme instead with
+  <code>{"category": "ssh"}</code> — the themes are <code>ssh</code>,
+  <code>shell</code>, <code>terminal</code>, <code>browser</code>,
+  <code>accessibility</code>, <code>windows</code>, <code>input</code>,
+  <code>screen</code>, <code>files</code>, <code>processes</code>,
+  <code>packages</code>, <code>snapshot</code>, <code>recording</code>,
+  <code>restream</code>, <code>room</code>, <code>audio</code>,
+  <code>clipboard</code>, <code>desktops</code>,
+  <code>system</code> and <code>general</code>.</p>
+
+  <p>Searching only saves anything if something is not being listed in the first
+  place, and most AI hosts already handle that themselves — Claude Code defers
+  tool schemas and loads them on demand. For hosts that do not, set
+  <code>MCP_DISCOVERY=1</code>: the tool list then advertises a core set of
+  twelve — enough to look at the desktop, read its structure, click, type and
+  run something — and leaves <code>tool_search</code> to surface the rest.</p>
+
+  <p><b>Every other tool stays callable.</b> Discovery narrows what is
+  <i>advertised</i>, never what is <i>permitted</i>; that is the policy's job,
+  below. A tool left out of the list is one the agent has not been told about
+  yet, not one it is forbidden to use.</p>
+
+  <h3 id="ai-agent-policy">Limiting what it may do</h3>
+  <p>Every tool declares what it can do to the machine, and the policy levels
+  are built on that one declaration:</p>
+  <table>
+    <tr><th>Risk</th><th>What it means</th><th>Example</th></tr>
+    <tr><td><code>read</code></td><td>Observes; changes nothing</td>
+      <td><code>screenshot</code>, <code>ui_tree</code></td></tr>
+    <tr><td><code>write</code></td><td>Drives the desktop — input, windows,
+      volume, the clipboard — but cannot reach the system underneath</td>
+      <td><code>mouse_click</code>, <code>type_text</code></td></tr>
+    <tr><td><code>danger</code></td><td>Runs code, touches the system, or moves
+      data outward</td><td><code>run_command</code>, <code>ssh_exec</code></td></tr>
+  </table>
+
+  <table>
+    <tr><th>Variable</th><th>Effect</th></tr>
+    <tr><td><code>MCP_POLICY=full</code></td><td>Everything (default)</td></tr>
+    <tr><td><code>MCP_POLICY=approve</code></td><td>The <code>danger</code>
+      tools wait for a person in the room to allow each call — a prompt with
+      the tool and its arguments, Allow / Deny; nobody present means
+      no</td></tr>
+    <tr><td><code>MCP_POLICY=safe</code></td><td>Removes the
+      <code>danger</code> tools — those that run code or touch the system</td></tr>
+    <tr><td><code>MCP_POLICY=readonly</code></td><td>Only the <code>read</code>
+      tools</td></tr>
+    <tr><td><code>MCP_DENY</code> / <code>MCP_ALLOW</code></td><td>Patterns, for
+      finer control</td></tr>
+    <tr><td><code>MCP_DISCOVERY=1</code></td><td>Advertise only the core set and
+      let <code>tool_search</code> find the rest. Not a permission — see
+      above</td></tr>
+  </table>
+
+  <p>A connection may restrict itself further, but never widen — which is what
+  makes it safe to hand an agent a read-only endpoint without changing anyone
+  else's.</p>
+
+  <p>The risk levels are also published as the Model Context Protocol's own
+  <code>readOnlyHint</code> and <code>destructiveHint</code> annotations, so an
+  AI host that understands them can decide on its own when to ask you before
+  acting — without knowing anything about SentinelDesk.</p>
+</section>
+
+<section id="whats-installed" data-track="use">
+  <h2>What is installed, and the two images</h2>
+  <p>Two variants come out of one build. <b>Lite</b> is the default; <b>full</b>
+  adds what is too large or too specialised to hand everybody.</p>
+
+  <p>Lite here does not mean headless — on a Raspberry Pi that is what "Lite"
+  means, but here the desktop <em>is</em> the product. It means the smallest set
+  that leaves nobody reaching for a package manager on their first afternoon: a
+  browser, a text editor, image and document viewers, an archive manager, a
+  calculator and a task manager, plus the network toolbox this desktop mostly
+  exists to use — nmap, dig, iperf3, tcpdump, mtr, sngrep and an OpenVPN client.
+  Git is there too, because everybody clones something.</p>
+
+  <p><b>Full</b> adds LibreOffice, Firefox, GIMP, Wireshark, a compiler
+  toolchain and Go, and on Intel machines also Steam and Wine.</p>
+
+  <p>Go sits in full rather than lite deliberately, even though this project is
+  written in it. A toolchain is a quarter of a gigabyte for people who will
+  never type <code>go</code>, and "everybody clones something" is a claim that
+  holds for <code>git</code> and not for a compiler.</p>
+
+  <div class="note">
+    <b>Full contains lite</b>
+    <p>Full is built on top of lite rather than beside it, so everything in one
+    is in the other. It also means the two share almost all their storage: a
+    machine that already has lite downloads only the difference.</p>
+  </div>
+
+  <h3 id="whats-installed-menu">Finding things</h3>
+  <p>The menu is grouped by what you want to do. Terminal, Web Browser, Files and
+  Text Editor sit at the top because they are what gets opened every session;
+  <b>Accessories</b>, <b>Network</b> and <b>System Tools</b> hold the rest, and
+  <b>All Applications</b> lists everything installed.</p>
+
+  <p>The command-line entries under Network open a terminal with the tool's usage
+  already printed, so you do not have to go and look up the flags first.</p>
+
+  <h3 id="whats-installed-vpn">Connecting to a VPN</h3>
+  <p><b>Network → VPN</b> asks for a <code>.ovpn</code> profile and connects.
+  Profiles kept in <code>~/.openvpn</code> are offered directly, and the home
+  survives restarts, so a connection you set up once stays set up.</p>
+  <p>This needs the container to have been started with a tunnel device and
+  network privileges. If it was not, the dialog says so and shows the two lines
+  to add rather than failing quietly.</p>
+
+  <h3 id="whats-installed-region">Clock and keyboard</h3>
+  <p>Both are set when the desktop starts, so one image serves every region. The
+  clock follows <code>TZ</code> — any standard name such as
+  <code>America/Argentina/Buenos_Aires</code> — and the keyboard follows
+  <code>KEYBOARD_LAYOUT</code>: <code>us</code>, <code>es</code> for Spain,
+  <code>latam</code> for Latin America, and so on.</p>
+  <p>If either is spelled wrong it is reported and ignored rather than
+  half-applied. A clock quietly running in UTC because of a typo is worse than
+  one that tells you.</p>
+</section>
+
+<section id="troubleshooting" data-track="use">
+  <h2>When something is wrong</h2>
+
+  <h3 id="trouble-stream">Nothing arrives at VLC</h3>
+  <p>Almost always one of three things. Check them in this order:</p>
+  <ol>
+    <li>VLC is not actually listening. <code>lsof -nP -iUDP:5000</code> must
+      show <code>UDP *:5000</code>. A random high port means it is calling out,
+      not listening — you forgot the <code>@</code>.</li>
+    <li>The address points somewhere the container cannot reach. From inside
+      Docker, <code>localhost</code> is the container itself, and a host address
+      inside <code>172.17.0.0/16</code> collides with Docker's own bridge.</li>
+    <li>You are using <code>srt://</code> with VLC. See
+      <a href="#stream-out-vlc">above</a>.</li>
+  </ol>
+
+  <h3 id="trouble-stale">The interface did not change after a rebuild</h3>
+  <p>It should — the client is served with an ETag over its own bytes, so the
+  browser has to revalidate. If it genuinely persists, confirm the container was
+  recreated and not just restarted: <code>make up</code> rebuilds the image.</p>
+
+  <h3 id="trouble-quality">The picture is soft, or lagging behind</h3>
+  <p>Open <b>Statistics</b>. It shows the live bitrate, frames, packets, how far
+  behind live you are, and a clock down to milliseconds — which is the quickest
+  way to tell whether two browsers are actually in sync.</p>
+  <p>Software encoding 1080p is the usual cause. Set <code>ENCODER=x264</code>
+  if auto-detection landed on VP8, and check whether the host has a GPU worth
+  using with <code>nvenc</code> or <code>vaapi</code>.</p>
+
+  <h3 id="trouble-keyboard">Keys are not reaching the desktop</h3>
+  <p>Check the presence panel: only the participant holding control sends input.
+  If a window of the control layer is open, the keyboard belongs to it, not to
+  the desktop.</p>
+</section>

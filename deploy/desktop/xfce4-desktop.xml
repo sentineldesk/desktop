@@ -1,0 +1,69 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<!-- SentinelDesk
+     A collaborative operating system for people and AI agents.
+
+     Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+
+     Licensed under the Apache License, Version 2.0.
+
+     This product's name and logo are trademarks of Federico Pereira and are not
+     covered by the license above. See the README for the trademark policy.
+
+     SPDX-License-Identifier: Apache-2.0
+
+     xfdesktop's factory configuration: one wallpaper PER WORKSPACE, which is
+     the reason xfdesktop replaced pcmanfm's desktop mode at all — pcmanfm can
+     only paint one root window, full stop. The four images are variants of
+     the same design, each carrying a huge tonal numeral and its own accent
+     (1 phosphor, 2 steel blue, 3 amber, 4 violet), so a glance at any frame
+     of the stream answers "which workspace am I looking at" without finding
+     the pager. deploy/desktop/make-workspace-wallpapers.py derives them from
+     wallpaper.svg at image build.
+
+     "monitorscreen" is not a typo: xfdesktop keys the backdrop on the RandR
+     output name, and Xvfb — the only X server this desktop runs on — calls
+     its single output "screen". A different X server would ignore these keys
+     and fall back to xfdesktop's default backdrop, which is the visible kind
+     of failure; desktop-init.sh re-pins the images through xfconf-query at
+     boot as well, against the running server's actual name.
+
+     A deployment's own wallpaper (ROOM_WALLPAPERS / $WALLPAPER) overrides
+     these at boot — see desktop-init.sh. -->
+
+<channel name="xfce4-desktop" version="1.0">
+  <property name="backdrop" type="empty">
+    <property name="single-workspace-mode" type="bool" value="false"/>
+    <property name="screen0" type="empty">
+      <property name="monitorscreen" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="last-image" type="string" value="/usr/share/backgrounds/sentineldesk/ws1.png"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+        <property name="workspace1" type="empty">
+          <property name="last-image" type="string" value="/usr/share/backgrounds/sentineldesk/ws2.png"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+        <property name="workspace2" type="empty">
+          <property name="last-image" type="string" value="/usr/share/backgrounds/sentineldesk/ws3.png"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+        <property name="workspace3" type="empty">
+          <property name="last-image" type="string" value="/usr/share/backgrounds/sentineldesk/ws4.png"/>
+          <property name="image-style" type="int" value="5"/>
+        </property>
+      </property>
+    </property>
+  </property>
+  <property name="desktop-icons" type="empty">
+    <!-- Icon labels are styled in gtk.css: dark ink with a light lift,
+         because the wallpaper is light and the dark GTK theme would paint
+         them white-on-white. -->
+    <property name="icon-size" type="uint" value="40"/>
+    <property name="file-icons" type="empty">
+      <property name="show-home" type="bool" value="true"/>
+      <property name="show-filesystem" type="bool" value="true"/>
+      <property name="show-trash" type="bool" value="true"/>
+      <property name="show-removable" type="bool" value="false"/>
+    </property>
+  </property>
+</channel>

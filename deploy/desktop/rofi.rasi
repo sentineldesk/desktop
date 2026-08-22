@@ -1,0 +1,141 @@
+/* SentinelDesk
+ * A collaborative operating system for people and AI agents.
+ *
+ * Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+ *
+ * Licensed under the Apache License, Version 2.0.
+ *
+ * This product's name and logo are trademarks of Federico Pereira and are not
+ * covered by the license above. See the README for the trademark policy.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* The launcher — the one piece this desktop takes from Archcraft, because it
+ * is the piece Archcraft is actually best at: a keyboard-first application
+ * palette instead of walking a nested menu. The look is not Archcraft's,
+ * though; it is this desktop's own tokens — #0d1110 surfaces, #E7EDEA ink,
+ * the phosphor #3FD68C selection with dark text, exactly as the Openbox menu
+ * already highlights — so opening it does not feel like visiting another
+ * program's idea of a theme.
+ *
+ * Square on purpose, like everything else here: rofi can round its corners,
+ * but without a compositor the rounding punches to black, and this desktop
+ * measured picom and declined it (see the openbox themerc for the numbers).
+ *
+ * The golden rule holds through this file: rofi invents nothing. drun mode
+ * lists the same /usr/share/applications entries libfm and the panel already
+ * trust, and window mode lists what wmctrl reports — so what a person can
+ * launch from here is exactly what the agent can enumerate from the same two
+ * sources, and a launch lands as a new X window the event watcher sees. */
+
+configuration {
+    modes: "drun,run,window";
+    show-icons: true;
+    icon-theme: "Papirus";
+    display-drun: "apps";
+    display-run: "run";
+    display-window: "windows";
+    drun-display-format: "{name}";
+    font: "JetBrains Mono 11";
+    terminal: "lxterminal";
+}
+
+* {
+    background-color: transparent;
+    text-color: #E7EDEA;
+}
+
+window {
+    background-color: #0d1110;
+    border: 1px;
+    border-color: #2f3936;
+    width: 560px;
+    padding: 0;
+}
+
+mainbox {
+    padding: 0;
+}
+
+inputbar {
+    background-color: #141917;
+    padding: 12px 16px;
+    spacing: 10px;
+    children: [ "prompt", "entry" ];
+}
+
+prompt {
+    text-color: #3FD68C;
+}
+
+entry {
+    placeholder: "type to search";
+    placeholder-color: #6b7671;
+}
+
+listview {
+    lines: 9;
+    padding: 6px 0;
+    scrollbar: false;
+}
+
+element {
+    padding: 8px 16px;
+    spacing: 12px;
+}
+
+element-icon {
+    size: 22px;
+}
+
+/* `inherit` is load-bearing: rofi's built-in default theme styles
+ * element-text with its own foreground, which out-dimmed every unselected
+ * row to near-invisibility until the child was told to take the row's
+ * colour instead. */
+element-text {
+    vertical-align: 0.5;
+    background-color: transparent;
+    text-color: inherit;
+}
+
+element normal.normal, element alternate.normal {
+    background-color: transparent;
+    text-color: #E7EDEA;
+}
+
+element normal.active, element alternate.active {
+    background-color: transparent;
+    text-color: #3FD68C;
+}
+
+element normal.urgent, element alternate.urgent {
+    background-color: transparent;
+    text-color: #FF5F57;
+}
+
+element selected.normal, element selected.active {
+    background-color: #3FD68C;
+    text-color: #052B17;
+}
+
+element selected.urgent {
+    background-color: #FF5F57;
+    text-color: #0d1110;
+}
+
+/* The mode switcher at the bottom: three quiet words, the active one lit. */
+mode-switcher {
+    padding: 0;
+}
+
+button {
+    padding: 8px;
+    background-color: #101413;
+    text-color: #6b7671;
+}
+
+button selected {
+    background-color: #141917;
+    text-color: #3FD68C;
+}

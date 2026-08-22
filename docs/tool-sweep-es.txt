@@ -1,0 +1,4982 @@
+SentinelDesk — cada herramienta llamada contra un escritorio real
+Ejecutado el 07 de agosto de 2026, 07:47 contra sentineldesk v1.2.9 (e8ce1d2) · build 20260807-073820
+
+Generado por tools/tool-sweep.py. La tabla resumen, con la misma
+numeración, está en docs/tool-sweep.md.
+
+Result es la respuesta textual de la herramienta. Los bloques `no ejecutada` dicen el motivo en su lugar.
+
+
+========================================================================================
+== Ver el escritorio
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #1   [ok]
+get_desktop_info: Resolución, sesión y qué está corriendo el escritorio
+Argumentos enviados: ninguno
+Result: {
+  "display": ":0",
+  "encoder": "auto",
+  "joystick": true,
+  "memory_used": "2476/7833 MB",
+  "recording": false,
+  "resolution": "1920x1080",
+  "restreaming": false,
+  "uptime": "07:47:16 up 19:41,  0 users,  load average: 3.61, 4.34, 4.28",
+  "window_manager": "Openbox"
+}
+
+Qué hizo:
+  Leyó display, encoder, resolución, gestor de ventanas, uptime y memoria en una sola
+  llamada, desde /proc y la configuración en uso en vez de preguntarle a X.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Mezcla datos que nunca cambian (display, gestor de ventanas) con otros que cambian
+  cada segundo (memoria, carga). Quien haga polling de la memoria vuelve a leer las
+  constantes cada vez. Habría que separar la mitad volátil, o decir cuándo se tomó
+  cada campo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #2   [ok]
+get_screen_info: Geometría de la pantalla y cuántos escritorios virtuales hay
+Argumentos enviados: ninguno
+Result: {
+  "desktops": 4,
+  "display": ":0",
+  "height": 1080,
+  "width": 1920
+}
+
+Qué hizo:
+  Reportó la geometría y la cantidad de escritorios virtuales directo desde la
+  conexión X.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Ya es la fuente primaria: le pregunta a X, no parsea nada. Sólo mejoraría reportando
+  la geometría por monitor, que este Xvfb de una sola cabeza no tiene forma de tener.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #3   [ok]
+screenshot: Capturar la pantalla entera como PNG
+Argumentos enviados: ninguno
+Result: [image saved: /tmp/mcp-screenshot-1786099636983.png]
+
+Qué hizo:
+  Capturó el framebuffer de forma nativa por desktop.GrabScreenshotPNG y devolvió PNG,
+  con la misma captura disponible inline, a archivo, o empujada al navegador que esté
+  mirando.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Sin subproceso, sin pérdida por compresión, y un solo camino de captura para tres
+  destinos. Para ir más lejos necesitaría damage tracking — devolver sólo lo que
+  cambió desde la última llamada — que en un escritorio mayormente quieto recortaría
+  un orden de magnitud los bytes que lee un modelo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #4   [ok]
+screenshot_region: Capturar un rectángulo en vez de la pantalla entera
+Argumentos enviados: {"height": 200, "width": 320, "x": 0, "y": 0}
+Result: [image saved: /tmp/mcp-screenshot_region-1786099637022.png]
+
+Qué hizo:
+  Recortó en el momento de capturar en vez de traer la pantalla y cortarla, así el
+  costo es el rectángulo y no el display.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  La forma ya es la correcta. La mejora está en el nivel del que llama: combinarla con
+  ui_find para poder nombrar una región ('el diálogo') en vez de medirla.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #5   [ok]
+get_pixel_color: El color de un pixel, para verificar estado sin traer una imagen
+Argumentos enviados: {"x": 10, "y": 10}
+Result: {
+  "b": 214,
+  "g": 207,
+  "hex": "#c3cfd6",
+  "r": 195
+}
+
+Qué hizo:
+  Leyó un pixel por la conexión X — la forma más barata posible de verificar estado,
+  sin que cruce ninguna imagen.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Nada que mejorar en el mecanismo. Lo útil sería una compañera que espere a que un
+  pixel cambie, lo que convertiría la lectura más barata en la primitiva de
+  sincronización más barata.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #6   [ok]
+read_screen_text: Pasar la pantalla a texto con OCR
+Argumentos enviados: {"lang": "eng"}
+Result: {
+  "elements": 127,
+  "text": "panel\nChromium\n07:47\nsentineldesk@60c97d694cc8: /\nsweep.html - Chromium\nsweep.html\nNew Tab\nMinimize\nRestore\nClose\nTab search\nBack\nForward\nReload\nHome\nWork\nFile\nfile:///tmp/sweep.html\nAddress and search bar\nBookmark this tab\nRestore pages?\nBookmarks\nSaved Tab Groups\nTab groups\nDebian.org\nLatest News\nHelp\nSeparator\nInfobar Container\nInfobar\nChromium didn't shut down correctly.\nYou are using an unsupported command-line flag: --no-sandbox. Stability and security will suffer.\nclicked\nsweep\nGo\nEdit\nTabs\nsentineldesk@60c97d694cc8:/$ echo sweep-terminal-ok \u003e /tmp/sweep-terminal.txt\nsentineldesk@60c97d694cc8:/$\nTerminal",
+  "via": "accessibility"
+}
+
+Qué hizo:
+  Leyó la pantalla desde el árbol de accesibilidad donde la aplicación expone uno,
+  cayó al OCR donde no lo hay, y dijo cuál contestó.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  El OCR ahora es el respaldo y no el método, que es toda la diferencia. Sobre la
+  misma pantalla el árbol devolvió cada etiqueta exacta — Minimize, Restore, Tab
+  search, Bookmark this tab, Save changes — mientras tesseract devolvía 'mel OF Se @
+  vread.htm!- chromium', 'GC QQ Q@File', perdía un guion de --no-sandbox y no
+  encontraba el botón. Quien llama no puede distinguir una mala lectura de una
+  lectura, así que la respuesta ahora dice de qué fuente salió y el OCR avisa que es
+  una conjetura. También se descartan las rachas del carácter de reemplazo de objeto:
+  una barra de íconos llegaba como una línea de ellos, varias veces por ventana,
+  gastando tokens sin aportar nada. Lo que falta es alcance — devuelve todo lo
+  visible, incluido el cromo entero del navegador, sin forma de pedir sólo la ventana
+  enfocada, y sin agrupación espacial, así que un diseño a dos columnas se lee como
+  una sola intercalada.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #7   [ok]
+find_text: OCR, pero devolviendo dónde está un texto para poder clickearlo
+Argumentos enviados: {"text": "Files"}
+Result: no match for "files" on screen
+
+Qué hizo:
+  Ubicó texto y devolvió coordenadas de pantalla: exactas desde el árbol de
+  accesibilidad cuando puede, y cajas de palabra del OCR con confianza cuando no.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Dos fallas distintas, y la más silenciosa era la peor. El TSV de tesseract es una
+  fila por palabra, y la búsqueda se probaba contra cada fila por separado, así que un
+  texto con un espacio no podía coincidir nunca — 'Save changes' y 'Quarterly Report'
+  devolvían 'no match on screen' estando claramente dibujados, lo que se lee como que
+  el texto no está y no como que la herramienta sólo sabe buscar de a una palabra.
+  Ahora las líneas se rearman desde sus palabras, y la caja de una frase es la unión
+  de las palabras que abarca con la confianza de la más débil, porque una frase vale
+  lo que su parte menos segura. La otra falla era la fuente: estas coordenadas van
+  directo a un click, y un carácter mal leído producía una caja confiada alrededor de
+  otra cosa. Ahora se pregunta primero al árbol, donde la posición es la que declara
+  la aplicación y viene marcada como exacta. Queda pendiente: nada verifica que el
+  punto sea alcanzable, así que una coincidencia debajo de un diálogo se devuelve
+  igual que una a la vista — la comprobación que browser_click ya hace para una
+  página.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #8   [ok]
+get_mouse_position: Dónde está el puntero ahora
+Argumentos enviados: ninguno
+Result: {
+  "x": 360,
+  "y": 340
+}
+
+Qué hizo:
+  Consultó el puntero por la conexión X.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Autoritativo y gratis. No hay nada que agregar.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #9   [ok]
+get_active_window: Qué ventana tiene el foco
+Argumentos enviados: ninguno
+Result: {
+  "id": "0x01e00003",
+  "desktop": 0,
+  "x": 0,
+  "y": 36,
+  "w": 1920,
+  "h": 1044,
+  "class": "Chromium",
+  "title": "sweep.html - Chromium"
+}
+
+Qué hizo:
+  Leyó _NET_ACTIVE_WINDOW y describió esa ventana: id, geometría, clase y título como
+  campos.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Una lectura de propiedad donde antes eran tres procesos xdotool devolviendo un
+  párrafo de texto para parsear. Que no haya foco ahora es una respuesta con nota y no
+  un error, así que quien llama puede distinguir un escritorio inactivo de una
+  consulta rota. Las coordenadas se traducen a la raíz, así que son las que sirven
+  para un clic incluso con un gestor de ventanas que reparenta.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #10   [ok]
+list_windows: Cada ventana abierta con su id y su geometría
+Argumentos enviados: ninguno
+Result: [
+  {
+    "id": "0x00c00006",
+    "desktop": -1,
+    "x": 0,
+    "y": 0,
+    "w": 1920,
+    "h": 36,
+    "class": "lxpanel",
+    "title": "panel"
+  },
+  {
+    "id": "0x00a00003",
+    "desktop": -1,
+    "x": 0,
+    "y": 0,
+    "w": 1920,
+    "h": 1080,
+    "class": "Pcmanfm",
+    "title": "pcmanfm"
+  },
+  {
+    "id": "0x01a00003",
+    "desktop": 0,
+    "x": 632,
+    "y": 353,
+    "w": 656,
+    "h": 436,
+    "class": "Lxterminal",
+    "title": "sentineldesk@60c97d694cc8: /"
+  },
+  {
+    "id": "0x01e00003",
+    "desktop": 0,
+    "x": 0,
+    "y": 36,
+    "w": 1920,
+    "h": 1044,
+    "class": "Chromium",
+    "title": "sweep.html - Chromium"
+  }
+]
+
+Qué hizo:
+  Listó cada ventana con id, escritorio, geometría, clase y título, leídos directo de
+  _NET_CLIENT_LIST y de las propiedades de cada ventana.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Antes hacía shell-out a wmctrl y partía la salida por espacios, así que una ventana
+  llamada "Report 2026" — dos espacios — se parseaba como otra ventana con otra
+  geometría. internal/desktop/ewmh.go lee las propiedades que X ya tiene: sin
+  subproceso, sin locale, sin aritmética de columnas. Lo único que queda es avisarle a
+  quien llama cuando el gestor de ventanas no publica ninguna lista de clientes, que
+  es una falla distinta de un escritorio vacío.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #11   [ok]
+list_desktops: Los escritorios virtuales y cuál es el actual
+Argumentos enviados: ninguno
+Result: [
+  {
+    "number": 0,
+    "name": "desktop 1",
+    "current": true
+  },
+  {
+    "number": 1,
+    "name": "desktop 2",
+    "current": false
+  },
+  {
+    "number": 2,
+    "name": "desktop 3",
+    "current": false
+  },
+  {
+    "number": 3,
+    "name": "desktop 4",
+    "current": false
+  }
+]
+
+Qué hizo:
+  Listó los escritorios virtuales y marcó el actual, desde _NET_NUMBER_OF_DESKTOPS,
+  _NET_CURRENT_DESKTOP y _NET_DESKTOP_NAMES.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Esto antes no era sólo poco elegante, estaba mal. El parser viejo tomaba todos los
+  campos desde el índice 8 como nombre, así que cada escritorio volvía llamándose
+  "1920x1044 desktop 1", con el tamaño del área de trabajo pegado adelante — desde que
+  la herramienta existía, porque nadie leyó la salida de cerca. Leer la propiedad de
+  nombres da el nombre.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #12   [ok]
+list_processes: Procesos corriendo
+Argumentos enviados: {"filter": "python"}
+Result: [
+  {
+    "command": "/usr/bin/python3 /usr/bin/supervisord -c /etc/supervisor/supervisord.conf",
+    "cpu": "0.0",
+    "mem": "0.3",
+    "name": "supervisord",
+    "pid": 1
+  }
+]
+
+Qué hizo:
+  Corrió ps y filtró por substring.
+
+Puntaje del método: 3/5  ●●●○○
+
+Cómo llevarla más lejos:
+  Un filtro por substring sobre una tabla de texto encuentra procesos cuyo argumento
+  apenas menciona el nombre. Leer /proc directo daría coincidencia exacta sobre comm y
+  argv, más los campos que quien llama suele querer después — rss, hora de inicio,
+  padre — sin una segunda llamada.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #13   [ok]
+is_running: Si un proceso con ese nombre está vivo
+Argumentos enviados: {"name": "Xvfb"}
+Result: {
+  "pids": [
+    38
+  ],
+  "running": true
+}
+
+Qué hizo:
+  Preguntó si existe un proceso con ese nombre.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Contesta lo que se le preguntó, pero un true/false pelado obliga a correr
+  list_processes para saber algo más. Devolver la cantidad y los pids no costaría nada
+  y sacaría esa segunda llamada.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #14   [ok]   [efecto verificado fuera de MCP]
+list_commands: The command-line programs available, by category
+Argumentos enviados: {"category": "vcs"}
+Result: {
+  "commands": [
+    {
+      "category": "vcs",
+      "command": "git",
+      "package": "git",
+      "path": "/usr/bin/git"
+    },
+    {
+      "category": "vcs",
+      "command": "git-receive-pack",
+      "package": "git",
+      "path": "/usr/bin/git-receive-pack"
+    },
+    {
+      "category": "vcs",
+      "command": "git-shell",
+      "package": "git",
+      "path": "/usr/bin/git-shell"
+    },
+    {
+      "category": "vcs",
+      "command": "git-upload-archive",
+      "package": "git",
+      "path": "/usr/bin/git-upload-archive"
+    },
+    {
+      "category": "vcs",
+      "command": "git-upload-pack",
+      "package": "git",
+      "path": "/usr/bin/git-upload-pack"
+    },
+    {
+      "category": "vcs",
+      "command": "scalar",
+      "package": "git",
+      "path": "/usr/bin/scalar"
+    }
+  ],
+  "matched": 6,
+  "of": 902
+}
+
+Qué hizo:
+  Listó los ejecutables de PATH agrupados por las secciones del propio sistema de
+  paquetes, y marcó los que además tienen entrada de escritorio.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Existe porque la mitad de lo instalado no tenía ninguna herramienta.
+  list_installed_apps lee las entradas .desktop, así que contesta qué hay en el menú;
+  nada contestaba qué se puede tipear. La única forma de saber si un comando existía
+  era ejecutar uno, y run_command, terminal_run y shell_exec son todas riskDanger —
+  así que un agente bajo readonly o safe podía inventariar el escritorio gráfico y no
+  podía establecer si git estaba instalado. Leer directorios es una lectura, y
+  clasificarlo así cierra eso. Las categorías son el campo Section de Debian y no algo
+  inferido de un nombre, por eso net, vcs y admin significan lo que dicen. La llamada
+  sin filtro devuelve esos conteos y no 902 nombres, bajo el principio de que una
+  respuesta que nadie puede leer no es una respuesta. Las descripciones vienen de dpkg
+  y no de whatis, que era la fuente obvia y acá no devuelve nada porque la imagen
+  borra las man pages. Lo que no hace es distinguir un comando de un envoltorio:
+  git-upload-archive aparece al lado de git con la misma descripción, porque la que la
+  tiene es el paquete.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #15   [ok]
+list_installed_apps: Aplicaciones con entrada de escritorio
+Argumentos enviados: ninguno
+Result: [
+  {
+    "exec": "/usr/bin/chromium %U",
+    "name": "Chromium Web Browser"
+  },
+  {
+    "exec": "uxterm",
+    "name": "UXTerm"
+  },
+  {
+    "exec": "xterm",
+    "name": "XTerm"
+  },
+  {
+    "exec": "filezilla",
+    "name": "FileZilla"
+  },
+  {
+    "exec": "galculator",
+    "name": "Galculator"
+  },
+  {
+    "exec": "gpicview %u",
+    "name": "GPicView"
+  },
+  {
+    "exec": "htop",
+    "name": "Htop"
+  },
+  {
+    "exec": "lxtask",
+    "name": "Task Manager"
+  },
+  {
+    "exec": "lxterminal",
+    "name": "LXTerminal"
+  },
+  {
+    "exec": "mc",
+    "name": "Midnight Commander"
+  },
+  {
+    "exec": "mcedit",
+    "name": "Midnight Commander editor"
+  },
+  {
+    "exec": "evince %U",
+    "name": "Document Viewer"
+  },
+  {
+    "exec": "zathura %U",
+    "name": "Zathura"
+  },
+  {
+    "exec": "mousepad --preferences",
+    "name": "Text Editor Settings"
+  },
+  {
+    "exec": "mousepad %U",
+    "name": "Mousepad"
+  },
+  {
+    "exec": "pcmanfm --desktop-pref",
+    "name": "Desktop Preferences"
+  },
+  {
+    "exec": "pcmanfm %U",
+    "name": "PCMan File Manager"
+  },
+  {
+    "exec": "vim %F",
+    "name": "Vim"
+  },
+  {
+    "exec": "/usr/bin/vlc --started-from-file %U",
+    "name": "VLC media player"
+  },
+  {
+    "exec": "xarchiver %f",
+    "name": "Xarchiver"
+  },
+  {
+    "exec": "/usr/bin/xfreerdp3",
+    "name": "xfreerdp3"
+  },
+  {
+    "exec": "/usr/bin/xtigervncviewer",
+    "name": "TigerVNC viewer"
+  }
+]
+
+Qué hizo:
+  Leyó las entradas .desktop, así que la respuesta es lo que una persona vería en el
+  menú y no lo que instaló dpkg.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  La fuente correcta: lista lo que se puede lanzar, no lo que existe en disco. Podría
+  traer el ícono y las categorías de cada entrada, que es la diferencia entre una
+  lista y algo sobre lo que un agente puede razonar.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #16   [ok]
+get_audio_state: Sink, volumen y si está silenciado
+Argumentos enviados: ninguno
+Result: {
+  "mute": false,
+  "sink": "sentineldesk",
+  "volume": "Volume: front-left: 39321 /  60% / -13.31 dB,   front-right: 39321 /  60% / -13.31 dB"
+}
+
+Qué hizo:
+  Le preguntó a PulseAudio por el sink, el volumen y el estado de silencio.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Reporta el sink del que graba el escritorio y no lo que hace el stream de cada
+  aplicación, así que un agente no puede saber qué programa está haciendo ruido.
+  Listar los sink inputs contestaría eso.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #17   [ok]
+check_errors: Cualquier diálogo de error o alerta que haya en pantalla
+Argumentos enviados: ninguno
+Result: {
+  "dialogs": [
+    {
+      "ref": "3/0/0/0/5/3/0",
+      "role": "alert",
+      "text": "￼￼￼￼￼",
+      "title": "Infobar"
+    },
+    {
+      "ref": "3/0/1",
+      "role": "alert",
+      "text": "￼",
+      "title": "Restore pages?"
+    },
+    {
+      "ref": "3/1",
+      "role": "alert",
+      "text": "￼",
+      "title": "Restore pages?"
+    }
+  ],
+  "errors_on_screen": true,
+  "hint": "use ui_click with the ref of a button to dismiss one, after reading what it says"
+}
+
+Qué hizo:
+  Recorrió el árbol de accesibilidad buscando alerts y diálogos, y después cualquier
+  cosa cuyo texto suene a falla — estructura primero, heurística después.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  El instinto correcto: un programa gráfico no falla con un código de salida, pone un
+  cuadro en la pantalla. Pero la mitad heurística tiene forma de inglés, así que un
+  diálogo de error en español o portugués le es invisible — los mismos tres idiomas
+  que la interfaz ya trae cerrarían eso.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #18   [ok]
+wait: Dormir, para dejar que la interfaz se asiente
+Argumentos enviados: {"ms": 50}
+Result: waited 50 ms
+
+Qué hizo:
+  Durmió, y desde la etapa 1 corta cuando se cancela la llamada en vez de dormir a
+  través de la cancelación.
+
+Puntaje del método: 3/5  ●●●○○
+
+Cómo llevarla más lejos:
+  Es la herramienta a la que recurre un modelo cuando no sabe qué está esperando, y
+  una duración adivinada es o muy corta o desperdiciada. Cada uso que pueda nombrar
+  una condición debería ser ui_wait_for, wait_for_window o wait_for_idle. Su
+  descripción debería decirlo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #19   [ok]
+wait_for_idle: Esperar a que la pantalla deje de cambiar y la CPU se calme
+Argumentos enviados: {"ignore_cpu": true, "quiet_ms": 400, "timeout_ms": 4000}
+Result: {
+  "cpu_percent": 2,
+  "idle": true,
+  "reason": "the screen went still and the CPU settled",
+  "waited_ms": 468
+}
+
+Qué hizo:
+  Esperó sobre X DAMAGE a que dejaran de pintar la pantalla y la CPU se calmara, sin
+  capturar nada, y respeta la cancelación.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  La respuesta correcta al problema que `wait` adivina, y antes llegaba por el camino
+  más caro posible: cinco veces por segundo agarraba el framebuffer entero, lo
+  codificaba en PNG, lo escribía a disco, lo volvía a leer y lo hasheaba — así que la
+  herramienta para detectar quietud era lo más ocupado del escritorio mientras corría,
+  y la CPU que gastaba era CPU que esa misma llamada después citaba como razón de que
+  la máquina no estaba quieta. X reporta el pintado por DAMAGE, así que ya no captura
+  nada: una espera de diez segundos pasó de unos 215 procesos extra a la misma cuenta
+  que una llamada que no hace nada. El número de CPU también estaba mal — sumaba `ps
+  -eo pcpu`, que es el promedio de cada proceso sobre toda su vida, así que un daemon
+  ocupado al arrancar seguía inflando el total mientras viviera; los deltas de
+  /proc/stat miden el intervalo. Queda el límite que el método no puede arreglar:
+  DAMAGE reporta un reloj que avanza igual que una página que carga, así que un
+  escritorio con segundero nunca está quieto. Pedir los rectángulos dañados en vez de
+  sólo su existencia permitiría ignorar regiones chicas y periódicas.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== El catálogo y la sala
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #20   [ok]
+tool_search: Encontrar herramientas a partir de una tarea descrita en palabras
+Argumentos enviados: {"limit": 5, "query": "give someone remote access over ssh"}
+Result: {
+  "matched": 5,
+  "of": 116,
+  "tools": [
+    {
+      "name": "ssh_list_remote",
+      "category": "ssh",
+      "risk": "read",
+      "description": "List a directory on the remote host over SFTP.",
+      "inputSchema": {
+        "properties": {
+          "id": {
+            "description": "ssh session id",
+            "type": "string"
+          },
+          "path": {
+            "description": "remote directory",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "ssh_tunnel_remote",
+      "category": "ssh",
+      "risk": "danger",
+      "description": "REVERSE port forward (ssh -R): the server opens a port and everything arriving there is delivered to an address reachable from here. This is how you publish this desktop through a public jump host when it sits behind NAT. The server usually needs GatewayPorts enabled to listen on 0.0.0.0.",
+      "inputSchema": {
+        "properties": {
+          "id": {
+            "description": "ssh session id",
+            "type": "string"
+          },
+          "local_addr": {
+            "description": "where to deliver it from here, e.g. 127.0.0.1:8080",
+            "type": "string"
+          },
+          "remote_addr": {
+            "description": "address the SERVER will listen on, e.g. 0.0.0.0:8080",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "remote_addr",
+          "local_addr"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "ssh_connect",
+      "category": "ssh",
+      "risk": "danger",
+      "description": "Open an SSH connection to a remote host, authenticating with a password or a private key (with optional passphrase). The connection stays open for the other ssh_* tools. Returns a session id.",
+      "inputSchema": {
+        "properties": {
+          "host": {
+            "description": "hostname or IP",
+            "type": "string"
+          },
+          "key_pass": {
+            "description": "passphrase of the key, if it has one",
+            "type": "string"
+          },
+          "key_path": {
+            "description": "path to the private key, e.g. /home/sentineldesk/.ssh/id_ed25519",
+            "type": "string"
+          },
+          "password": {
+            "description": "password (or use key_path)",
+            "type": "string"
+          },
+          "port": {
+            "description": "port (default 22)",
+            "type": "integer"
+          },
+          "user": {
+            "description": "username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host",
+          "user"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "ssh_copy_id",
+      "category": "ssh",
+      "risk": "danger",
+      "description": "Install a public key into the remote user's authorized_keys over an existing session, so future connections can use the key instead of a password.",
+      "inputSchema": {
+        "properties": {
+          "id": {
+            "description": "ssh session id",
+            "type": "string"
+          },
+          "key_path": {
+            "description": "path to the PUBLIC key (default /home/sentineldesk/.ssh/id_ed25519.pub)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "ssh_download",
+      "category": "ssh",
+      "risk": "danger",
+      "description": "Copy a file from the remote host to the desktop over SFTP.",
+      "inputSchema": {
+        "properties": {
+          "id": {
+            "description": "ssh session id",
+            "type": "string"
+          },
+          "local": {
+            "description": "local path",
+            "type": "string"
+          },
+          "remote": {
+            "description": "remote path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "remote",
+          "local"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}
+
+Qué hizo:
+  Ordenó el catálogo por keywords sobre nombre, categoría y descripción, con stopwords
+  sacadas y unos veinte alias de categoría, y devolvió cada resultado con su schema y
+  su riesgo para poder llamarlo sin un segundo round trip.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Matching deliberadamente tonto, que es lo correcto para un corpus de 115 cadenas
+  cortas — y aun así necesita que 'ssh' sea alcanzable desde la consulta, que es para
+  lo que existen los alias. No puede contestar 'lo que escribe en un campo sin mover
+  el mouse'. Rankear por los schemas que un modelo efectivamente llamó después,
+  aprendido del action log, le ganaría a cualquier lista de alias escrita a mano.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #21   [ok]
+action_log: La auditoría: cada llamada con su conexión y su resultado
+Argumentos enviados: {"limit": 3}
+Result: {
+  "count": 3,
+  "entries": [
+    {
+      "time": "2026-08-07T07:47:21.197-03:00",
+      "tool": "wait",
+      "args": "{\"ms\":50}",
+      "ok": true,
+      "ms": 51,
+      "conn": 8,
+      "client": "mcp-cli 1.0"
+    },
+    {
+      "time": "2026-08-07T07:47:21.272-03:00",
+      "tool": "wait_for_idle",
+      "args": "{\"ignore_cpu\":true,\"quiet_ms\":400,\"timeout_ms\":4000}",
+      "ok": true,
+      "ms": 468,
+      "conn": 8,
+      "client": "mcp-cli 1.0"
+    },
+    {
+      "time": "2026-08-07T07:47:21.772-03:00",
+      "tool": "tool_search",
+      "args": "{\"limit\":5,\"query\":\"give someone remote access over ssh\"}",
+      "ok": true,
+      "ms": 0,
+      "conn": 8,
+      "client": "mcp-cli 1.0"
+    }
+  ]
+}
+
+Qué hizo:
+  Devolvió el anillo de auditoría, y desde la etapa 1 cada entrada nombra la conexión
+  y el cliente que hizo la llamada y lleva el tipo de denegación.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  En memoria y limitado a 2000 entradas, con JSONL sólo si se define ACTION_LOG. Un
+  agente que quiera saber qué hizo hace una hora se encuentra con que ya no está.
+  Hacer el archivo el default, rotado, no costaría nada y convertiría el log en algo
+  en lo que apoyarse en vez de algo que hay que alcanzar a leer.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #22   [ok]
+room_state: Quién está en la sala, quién maneja, y si esta conexión puede actuar
+Argumentos enviados: ninguno
+Result: {
+  "controller": "",
+  "controller_id": "",
+  "humans_present": true,
+  "may_inject": false,
+  "note": "Control is always claimed, never assumed — even with nobody else here. call request_control (immediate when the controls are free) and release_control when the task is done.",
+  "participants": [
+    {
+      "agent": false,
+      "controller": false,
+      "id": "u1",
+      "name": "Viewer 1",
+      "seconds": 190
+    },
+    {
+      "agent": true,
+      "controller": false,
+      "id": "agent",
+      "name": "AI agent",
+      "seconds": 169
+    }
+  ],
+  "you_have_control": false
+}
+
+Qué hizo:
+  Reportó quién está presente, quién tiene el control y si esta conexión puede
+  inyectar — todo el estado de arbitraje en una lectura.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  La primitiva correcta para la invariante sobre la que está construido este proyecto.
+  Lo que falta no está en esta herramienta sino al lado: no hay forma de que te avisen
+  cuando cambia, así que un agente que pierde el control se entera porque lo rechazan.
+  Eso es una notificación, no una lectura mejor.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Tomar los controles
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #23   [ok]
+request_control: Pedirle el escritorio a la sala antes de tocarlo
+Argumentos enviados: {"timeout_ms": 8000}
+Result: {
+  "granted": true,
+  "reason": "nobody was driving"
+}
+
+Qué hizo:
+  Le pidió el escritorio a la sala; se lo concedieron al instante porque nadie estaba
+  manejando, y le habría puesto la pregunta a quienes miraban si hubiera habido
+  alguien.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Esto es el diseño funcionando: el control se reclama, nunca se asume, y preguntar es
+  lo que hace visible cada traspaso. La mejora sería un campo de motivo que pueda
+  llenar quien lo pide, para que el cartel que ve una persona diga para qué quiere el
+  escritorio el agente y no solamente que lo quiere.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Puntero y teclado
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #24   [ok]
+mouse_move: Mover el puntero a una posición absoluta
+Argumentos enviados: {"x": 400, "y": 300}
+Result: moved to (400, 300)
+
+Qué hizo:
+  Movió el puntero por XTEST, el mismo camino que usa el DataChannel del navegador,
+  así que una persona que esté mirando lo ve moverse.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Un solo camino de inyección para los dos planos es justamente el punto: el puntero
+  de un agente no es un segundo cursor invisible. Nada que mejorar a este nivel;
+  suavizar un movimiento en pasos es cosa de quien llama.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #25   [ok]
+mouse_click: Hacer clic, opcionalmente moviéndose ahí primero
+Argumentos enviados: {"button": 1, "x": 400, "y": 300}
+Result: clicked button 1 x1
+
+Qué hizo:
+  Hizo clic por XTEST, opcionalmente moviéndose primero, con botón y doble clic como
+  argumentos.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Correcto y completo para lo que un clic es. La parte débil es clickear a ciegas
+  sobre coordenadas, y el arreglo no está acá: ui_click se dirige a un elemento y no
+  puede errarle.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #26   [ok]
+mouse_down: Apretar un botón y mantenerlo
+Argumentos enviados: {"button": 1}
+Result: mouse_down button 1
+
+Qué hizo:
+  Apretó y mantuvo un botón, dejando la pulsación abierta.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Necesaria para todo lo que mouse_drag no puede expresar. También deja el escritorio
+  en un estado apretado que sobrevive a la llamada, así que un agente que falla entre
+  el down y el up deja el botón trabado — soltar los botones al liberar el control
+  haría imposible ese estado irrecuperable.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #27   [ok]
+mouse_up: Soltar el botón que estaba apretado
+Argumentos enviados: {"button": 1}
+Result: mouse_up button 1
+
+Qué hizo:
+  Soltó un botón que estaba apretado.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  El mismo problema de emparejamiento visto desde el otro lado: nada garantiza que
+  llegue a correr. Ver mouse_down.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #28   [ok]
+mouse_drag: Arrastrar de un punto a otro
+Argumentos enviados: {"button": 1, "x1": 300, "x2": 360, "y1": 300, "y2": 340}
+Result: dragged (300,300) -> (360,340)
+
+Qué hizo:
+  Apretó, movió y soltó como una sola llamada, que es lo que hace que un arrastre sea
+  un arrastre y no tres eventos compitiendo.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Correcto que sea una sola llamada. Se mueve en línea recta a una sola velocidad, y
+  algunas interfaces distinguen un flick de un arrastre por la velocidad — una
+  duración o cantidad de pasos opcional cubriría esos casos sin complicar el común.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #29   [ok]
+mouse_scroll: Mover la rueda
+Argumentos enviados: {"dy": -2}
+Result: scrolled dy=-2 dx=0
+
+Qué hizo:
+  Scrolleó sintetizando pulsaciones de los botones 4 y 5, que es como X expresa la
+  rueda.
+
+Puntaje del método: 3/5  ●●●○○
+
+Cómo llevarla más lejos:
+  Botón 4/5 es la codificación vieja; los toolkits modernos esperan smooth scrolling
+  de XInput2, y una aplicación que sólo escuche eso no se mueve. Mandar eventos de
+  smooth scroll con fallback a botones arreglaría las aplicaciones que hoy no puede
+  scrollear.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #30   [ok]
+type_text: Escribir un texto en lo que tenga el foco
+Argumentos enviados: {"text": "sweep"}
+Result: typed 5 chars
+
+Qué hizo:
+  Escribió el texto por el inyector, remapeando keycodes al vuelo para los caracteres
+  que el layout activo no tiene en ninguna tecla.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Ese remapeo es lo que la hace funcionar con acentos y símbolos en vez de sólo ASCII,
+  y es el motivo para preferirla antes que componer llamadas a key_combo. Para un
+  texto largo sigue siendo un evento de tecla sintético por carácter; poner el
+  portapapeles y pegar sería más rápido, pero cambia lo que ve el escritorio, así que
+  este es el default honesto.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #31   [ok]
+key_combo: Apretar una tecla o combinación por su nombre de keysym de X
+Argumentos enviados: {"keys": "Escape"}
+Result: pressed Escape
+
+Qué hizo:
+  Apretó una combinación por nombre de keysym de X, resolviendo cada nombre contra el
+  keymap vivo.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Nombrar teclas por keysym es lo correcto — es la capa que sobrevive a un cambio de
+  layout. Un keysym que el mapa actual no tenga se descarta silenciosamente, que es
+  cómo una combinación puede no hacer nada; rechazar la llamada nombrando el que falta
+  convertiría una falla muda en un mensaje.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Portapapeles
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #32   [ok]   [efecto verificado fuera de MCP]
+set_clipboard: Poner texto en el portapapeles de X
+Argumentos enviados: {"text": "sentineldesk-sweep"}
+Result: clipboard set
+
+Qué hizo:
+  Escribió texto en la selección CLIPBOARD de X y reportó si la escritura realmente
+  ocurrió.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Antes descartaba el resultado, así que una escritura fallida se reportaba como éxito
+  y el agente iba a pegar algo que nunca estuvo. Acertarle al arreglo llevó tres
+  intentos: capturar stderr hizo que Go creara un pipe que el hijo demonizado de xclip
+  heredó y nunca cerró, y colgó sesenta segundos; agregar WaitDelay arregló eso e hizo
+  que una escritura exitosa se reportara como rota, porque ErrWaitDelay es el hijo
+  sosteniendo el pipe y no un comando fallido. Sigue siendo un subproceso por
+  escritura, y sigue siendo sólo texto — ser dueño de la selección desde adentro del
+  daemon es lo que lo llevaría a cinco.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #33   [ok]
+get_clipboard: Leer el portapapeles de X
+Argumentos enviados: ninguno
+Result: sentineldesk-sweep
+
+Qué hizo:
+  Leyó la selección CLIPBOARD de X con xclip, tratando un portapapeles vacío y una
+  selección sin dueño como cosas normales y no como errores.
+
+Puntaje del método: 3/5  ●●●○○
+
+Cómo llevarla más lejos:
+  La distinción que hace es correcta: que nadie sea dueño de la selección no es una
+  falla. Pero es un subproceso por lectura para algo que la conexión X puede hacer, y
+  sólo texto — una imagen o una ruta de archivo en el portapapeles le son invisibles,
+  que es justo lo que más probablemente tenga una persona que copió algo para el
+  agente.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Ventanas y escritorios
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #34   [ok]   [efecto verificado fuera de MCP]
+launch_app: Arrancar un programa en el escritorio, desacoplado
+Argumentos enviados: {"command": "xterm -T SWEEPWIN -e sleep 600"}
+Result: {
+  "as_root": false,
+  "command": "xterm -T SWEEPWIN -e sleep 600",
+  "note": "still running after 700 ms. A window may take longer to appear — use wait_for_window, or open_app_and_wait next time.",
+  "pid": 1960,
+  "running": true
+}
+
+Qué hizo:
+  Arrancó un programa desacoplado con setsid, así que cerrar la conexión MCP no se
+  lleva puesta la aplicación, y con as_root pasando por sudo -E para conservar
+  DISPLAY.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Desacoplar es lo correcto y el motivo está escrito. Lo que no puede decir es si el
+  programa realmente arrancó: vuelve apenas la shell hizo fork, y un comando que muere
+  al instante se ve idéntico a uno que anduvo. open_app_and_wait existe por ese hueco,
+  lo que ya indica que esta debería al menos devolver el pid y si seguía vivo un
+  momento después.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #35   [ok]
+wait_for_window: Esperar a que aparezca una ventana cuyo título coincida
+Argumentos enviados: {"match": "SWEEPWIN", "timeout_ms": 15000}
+Result: {
+  "class": "XTerm",
+  "found": true,
+  "id": "0x0180000c",
+  "title": "SWEEPWIN"
+}
+
+Qué hizo:
+  Se bloqueó en un evento de X hasta que existiera una ventana cuyo título o clase
+  coincida, con deadline, y corta cuando se cancela la llamada.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Antes hacía polling: wmctrl cada 300ms, unos cincuenta procesos a lo largo de una
+  espera de quince segundos para que le dijeran cuarenta y nueve veces que no había
+  pasado nada, y con la respuesta llegando hasta un tercio de segundo tarde. El gestor
+  de ventanas venía publicando el cambio en _NET_CLIENT_LIST todo ese tiempo. Ahora se
+  suscribe con PropertyChangeMask a la ventana raíz y se bloquea, medido con la misma
+  cantidad de procesos que un sleep de la misma duración — 33 lanzamientos pasaron a
+  cero — y con la detección dentro del ruido del propio arranque de la ventana. Queda
+  un límite honesto, y es por lo que hay un tick de respaldo de un segundo al lado de
+  los eventos: una ventana ya abierta que se renombra escribe _NET_WM_NAME en su
+  propia ventana, no en la raíz, así que un observador de la raíz no puede verlo.
+  Cubrir eso implica seguir la lista de clientes, suscribirse en cada ventana nueva y
+  manejar las que se destruyen en el medio.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #36   [ok]
+list_windows: Listar ventanas, para encontrar la que se acaba de abrir
+Argumentos enviados: ninguno
+Result: [
+  {
+    "id": "0x00c00006",
+    "desktop": -1,
+    "x": 0,
+    "y": 0,
+    "w": 1920,
+    "h": 36,
+    "class": "lxpanel",
+    "title": "panel"
+  },
+  {
+    "id": "0x00a00003",
+    "desktop": -1,
+    "x": 0,
+    "y": 0,
+    "w": 1920,
+    "h": 1080,
+    "class": "Pcmanfm",
+    "title": "pcmanfm"
+  },
+  {
+    "id": "0x01a00003",
+    "desktop": 0,
+    "x": 632,
+    "y": 353,
+    "w": 656,
+    "h": 436,
+    "class": "Lxterminal",
+    "title": "sentineldesk@60c97d694cc8: /"
+  },
+  {
+    "id": "0x01e00003",
+    "desktop": 0,
+    "x": 0,
+    "y": 36,
+    "w": 1920,
+    "h": 1044,
+    "class": "Chromium",
+    "title": "sweep.html - Chromium"
+  },
+  {
+    "id": "0x0180000c",
+    "desktop": 0,
+    "x": 1,
+    "y": 64,
+    "w": 484,
+    "h": 316,
+    "class": "XTerm",
+    "title": "SWEEPWIN"
+  }
+]
+
+Qué hizo:
+  Listó cada ventana con id, escritorio, geometría, clase y título, leídos directo de
+  _NET_CLIENT_LIST y de las propiedades de cada ventana.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Antes hacía shell-out a wmctrl y partía la salida por espacios, así que una ventana
+  llamada "Report 2026" — dos espacios — se parseaba como otra ventana con otra
+  geometría. internal/desktop/ewmh.go lee las propiedades que X ya tiene: sin
+  subproceso, sin locale, sin aritmética de columnas. Lo único que queda es avisarle a
+  quien llama cuando el gestor de ventanas no publica ninguna lista de clientes, que
+  es una falla distinta de un escritorio vacío.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #37   [ok]   [efecto verificado fuera de MCP]
+activate_window: Enfocar y traer al frente una ventana por id
+Argumentos enviados: {"id": "0x0180000c"}
+Result: activated window 0x0180000c
+
+Qué hizo:
+  Enfocó y trajo al frente una ventana con un mensaje de cliente _NET_ACTIVE_WINDOW.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Pedirle al gestor de ventanas en vez de levantar la ventana a sus espaldas, que es
+  lo que la hace funcionar con un gestor que reparenta y decora. El mensaje lleva una
+  indicación de origen, así que las reglas de robo de foco tratan a un agente como a
+  cualquier cosa que pidió el usuario.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #38   [ok]
+window_properties: Las propiedades X crudas de una ventana
+Argumentos enviados: {"id": "0x0180000c"}
+Result: {
+  "WM_CLASS": [
+    "xterm",
+    "XTerm"
+  ],
+  "WM_CLIENT_MACHINE": "60c97d694cc8",
+  "WM_COMMAND": [
+    "{ \"/usr/bin/xterm",
+    "-T",
+    "SWEEPWIN",
+    "-e",
+    "sleep",
+    "600\" }"
+  ],
+  "WM_ICON_NAME": "SWEEPWIN",
+  "WM_LOCALE_NAME": "C.UTF-8",
+  "WM_NAME": "SWEEPWIN",
+  "_KDE_NET_WM_FRAME_STRUT": [
+    "1",
+    "1",
+    "28",
+    "1"
+  ],
+  "_NET_FRAME_EXTENTS": [
+    "1",
+    "1",
+    "28",
+    "1"
+  ],
+  "_NET_WM_ALLOWED_ACTIONS": [
+    "_NET_WM_ACTION_CHANGE_DESKTOP",
+    "_NET_WM_ACTION_SHADE",
+    "_NET_WM_ACTION_CLOSE",
+    "_NET_WM_ACTION_MOVE",
+    "_NET_WM_ACTION_MINIMIZE",
+    "_NET_WM_ACTION_RESIZE",
+    "_NET_WM_ACTION_FULLSCREEN",
+    "_NET_WM_ACTION_MAXIMIZE_HORZ",
+    "_NET_WM_ACTION_MAXIMIZE_VERT",
+    "_NET_WM_ACTION_ABOVE",
+    "_NET_WM_ACTION_BELOW",
+    "_OB_WM_ACTION_UNDECORATE"
+  ],
+  "_NET_WM_DESKTOP": 0,
+  "_NET_WM_ICON_GEOMETRY": [
+    "544",
+    "2",
+    "200",
+    "32"
+  ],
+  "_NET_WM_PID": 1961,
+  "_NET_WM_STATE": "",
+  "_NET_WM_VISIBLE_ICON_NAME": "SWEEPWIN",
+  "_NET_WM_VISIBLE_NAME": "SWEEPWIN",
+  "_OB_APP_CLASS": "XTerm",
+  "_OB_APP_GROUP_CLASS": "XTerm",
+  "_OB_APP_GROUP_NAME": "xterm",
+  "_OB_APP_NAME": "xterm",
+  "_OB_APP_ROLE": "",
+  "_OB_APP_TITLE": "SWEEPWIN",
+  "_OB_APP_TYPE": "normal"
+}
+
+Qué hizo:
+  Leyó las propiedades X crudas de una ventana.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Esta es la única de la familia que va a la fuente, y es la más útil de todas para un
+  agente que intenta entender una ventana que no abrió él. Nada que cambiar.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #39   [ok]
+window_hierarchy: El árbol de ventanas de X, padres e hijos
+Argumentos enviados: ninguno
+Result: 
+xwininfo: Window id: 0x21f (the root window) (has no name)
+
+  Root window id: 0x21f (the root window) (has no name)
+  Parent window id: 0x0 (none)
+     30 children:
+     0x2800001 (has no name): ()  1x1+0+0  +0+0
+     0x2000003 "chromium": ("chromium" "Chromium")  200x200+0+0  +0+0
+        1 child:
+        0x2000004 (has no name): ()  1x1+-1+-1  +-1+-1
+     0x400008 (has no name): ()  73x61+400+300  +400+300
+     0x1e00005 (has no name): ()  1x1+0+0  +0+0
+     0x2000001 "chromium": ("chromium" "Chromium")  10x10+10+10  +10+10
+     0x1e00000 "Chromium clipboard": ()  10x10+-100+-100  +-100+-100
+     0x1a00009 (has no name): ()  1x1+-1+-1  +-1+-1
+     0x1a00001 "lxterminal": ("lxterminal" "Lxterminal")  10x10+10+10  +10+10
+     0xc0000e (has no name): ()  1x1+-1+-1  +-1+-1
+     0xc0000a "lxpanel": ()  10x10+-100+-100  +-100+-100
+     0xa00009 (has no name): ()  1x1+-1+-1  +-1+-1
+     0xc00002 "lxpanel": ()  10x10+-100+-100  +-100+-100
+     0xc00001 "lxpanel": ("lxpanel" "Lxpanel")  10x10+10+10  +10+10
+     0xa00001 "pcmanfm": ("pcmanfm" "Pcmanfm")  10x10+10+10  +10+10
+     0x60011f "Openbox": ("" (none))  1x1+-100+-100  +-100+-100
+     0x60016e (has no name): ()  166x48+877+516  +877+516
+        5 children:
+        0x600212 (has no name): ()  16x16+62+15  +940+532
+        0x600211 (has no name): ()  16x16+45+15  +923+532
+        0x600210 (has no name): ()  16x16+28+15  +906+532
+        0x60020f (has no name): ()  16x16+11+15  +889+532
+        0x60016f (has no name): ()  64x36+92+6  +970+523
+     0x600173 (has no name): ()  1x1+0+0  +0+0
+        1 child:
+        0x600174 (has no name): ()  1x1+0+0  +1+1
+     0x600171 (has no name): ()  1x1+0+0  +0+0
+        1 child:
+        0x600172 (has no name): ()  1x1+0+0  +1+1
+     0x60016a (has no name): ("OPENBOX_FOCUS_CYCLE_POPUP" "OPENBOX_FOCUS_CYCLE_POPUP")  1x1+0+0  +0+0
+        3 children:
+        0x60016d (has no name): ()  1x1+0+0  +1+1
+        0x60016c (has no name): ()  1x1+0+0  +1+1
+        0x60016b (has no name): ()  1x1+0+0  +1+1
+     0x600167 (has no name): ()  1x1+0+0  +0+0
+        2 children:
+        0x600169 (has no name): ()  1x1+0+0  +1+1
+        0x600168 (has no name): ()  1x1+0+0  +1+1
+     0x600166 (has no name): ()  1x1+0+0  +0+0
+     0x600165 (has no name): ()  1x1+0+0  +0+0
+     0x600164 (has no name): ()  1x1+0+0  +0+0
+     0x600163 (has no name): ()  1x1+0+0  +0+0
+     0x600175 (has no name): ()  1920x36+0+0  +0+0
+        56 children:
+        0xc00006 "panel": ("panel" "lxpanel")  1920x36+0+0  +0+0
+           1 child:
+           0xc00007 (has no name): ()  1x1+-1+-1  +-1+-1
+        0x6001c1 (has no name): ()  1x1+0+0  +0+0
+        0x6001c0 (has no name): ()  1x1+0+0  +0+0
+        0x6001bf (has no name): ()  1x1+0+0  +0+0
+        0x6001be (has no name): ()  1x1+0+0  +0+0
+        0x6001bd (has no name): ()  1x1+0+0  +0+0
+        0x6001bc (has no name): ()  1x1+0+0  +0+0
+        0x6001bb (has no name): ()  1x1+0+0  +0+0
+        0x6001ba (has no name): ()  1x1+0+0  +0+0
+        0x6001b9 (has no name): ()  1x1+0+0  +0+0
+        0x6001b8 (has no name): ()  1x1+0+0  +0+0
+        0x6001b7 (has no name): ()  1x1+0+0  +0+0
+        0x6001b6 (has no name): ()  1x1+0+0  +0+0
+        0x6001b5 (has no name): ()  1x1+0+0  +0+0
+        0x6001b4 (has no name): ()  1x1+0+0  +0+0
+        0x6001b3 (has no name): ()  1x1+0+0  +0+0
+        0x6001b2 (has no name): ()  1x1+0+0  +0+0
+        0x6001b1 (has no name): ()  1x1+0+0  +0+0
+        0x6001b0 (has no name): ()  1x1+0+0  +0+0
+        0x6001af (has no name): ()  1x1+0+0  +0+0
+        0x6001ae (has no name): ()  1x1+0+0  +0+0
+        0x6001ad (has no name): ()  1x1+0+0  +0+0
+        0x6001ac (has no name): ()  1x1+0+0  +0+0
+        0x6001ab (has no name): ()  1x1+0+0  +0+0
+        0x6001aa (has no name): ()  1x1+0+0  +0+0
+        0x6001a9 (has no name): ()  1x1+0+0  +0+0
+        0x6001a8 (has no name): ()  1x1+0+0  +0+0
+        0x6001a7 (has no name): ()  1x1+0+0  +0+0
+        0x6001a6 (has no name): ()  1x1+0+0  +0+0
+        0x6001a5 (has no name): ()  1x1+0+0  +0+0
+        0x6001a4 (has no name): ()  1x1+0+0  +0+0
+        0x6001a3 (has no name): ()  1x1+0+0  +0+0
+        0x6001a2 (has no name): ()  1x1+0+0  +0+0
+        0x6001a1 (has no name): ()  1x1+0+0  +0+0
+        0x6001a0 (has no name): ()  1x1+0+0  +0+0
+        0x60019f (has no name): ()  1x1+0+0  +0+0
+        0x60019e (has no name): ()  1x1+0+0  +0+0
+        0x60019d (has no name): ()  1x1+0+0  +0+0
+        0x60019c (has no name): ()  1x1+0+0  +0+0
+        0x60019b (has no name): ()  1x1+0+0  +0+0
+        0x60019a (has no name): ()  1x1+0+0  +0+0
+        0x600195 (has no name): ()  1x1+0+0  +0+0
+           4 children:
+           0x600199 (has no name): ()  1x1+0+0  +0+0
+           0x600198 (has no name): ()  1x1+0+0  +0+0
+           0x600197 (has no name): ()  1x1+0+0  +0+0
+           0x600196 (has no name): ()  1x1+0+0  +0+0
+        0x60018d (has no name): ()  1x1+0+0  +0+0
+        0x60018c (has no name): ()  1x1+0+0  +0+0
+        0x600186 (has no name): ()  1x1+0+0  +0+0
+        0x600185 (has no name): ()  1x1+0+0  +0+0
+        0x600184 (has no name): ()  1x1+0+0  +0+0
+        0x600183 (has no name): ()  1x1+0+0  +0+0
+        0x600182 (has no name): ()  1x1+0+0  +0+0
+        0x600181 (has no name): ()  1x1+0+0  +0+0
+        0x600180 (has no name): ()  1x1+0+0  +0+0
+           12 children:
+           0x600194 (has no name): ()  12x12+0+0  +0+0
+           0x600193 (has no name): ()  14x14+0+0  +0+0
+           0x600192 (has no name): ()  12x12+0+0  +0+0
+           0x600191 (has no name): ()  12x12+0+0  +0+0
+           0x600190 (has no name): ()  12x12+0+0  +0+0
+           0x60018f (has no name): ()  12x12+0+0  +0+0
+           0x60018e (has no name): ()  1x1+0+0  +0+0
+           0x60018b (has no name): ()  11x26+0+0  +0+0
+           0x60018a (has no name): ()  25x7+0+0  +0+0
+           0x600189 (has no name): ()  11x26+0+0  +0+0
+           0x600188 (has no name): ()  25x7+0+0  +0+0
+           0x600187 (has no name): ()  1x1+0+0  +0+0
+        0x60017b (has no name): ()  1x1+0+0  +0+0
+           2 children:
+           0x60017d (has no name): ()  1x1+0+0  +0+0
+           0x60017c (has no name): ()  1x1+0+0  +0+0
+        0x60017a (has no name): ()  1x1+0+0  +0+0
+           1 child:
+           0x60017f (has no name): ()  1x1+0+0  +0+0
+        0x600179 (has no name): ()  1x1+0+0  +0+0
+        0x600178 (has no name): ()  1x1+0+0  +0+0
+           1 child:
+           0x60017e (has no name): ()  1x1+0+0  +0+0
+        0x600176 (has no name): ()  1920x36+0+0  +0+0
+           1 child:
+           0x600177 (has no name): ()  1920x36+0+0  +0+0
+     0x600170 (has no name): ()  1x1+0+0  +0+0
+     0x600432 (has no name): ()  486x345+0+36  +0+36
+        56 children:
+        0x180000c "SWEEPWIN": ("xterm" "XTerm")  484x316+1+28  +1+64
+           1 child:
+           0x1800018 (has no name): ()  484x316+0+0  +1+64
+        0x60047e (has no name): ()  1x1+0+0  +0+36
+        0x60047d (has no name): ()  1x1+0+0  +0+36
+        0x60047c (has no name): ()  1x1+0+0  +0+36
+        0x60047b (has no name): ()  1x1+0+0  +0+36
+        0x60047a (has no name): ()  1x1+0+0  +0+36
+        0x600479 (has no name): ()  1x1+0+0  +0+36
+        0x600478 (has no name): ()  1x1+0+0  +0+36
+        0x600477 (has no name): ()  1x1+0+0  +0+36
+        0x600476 (has no name): ()  1x1+0+0  +0+36
+        0x600475 (has no name): ()  1x1+0+0  +0+36
+        0x600474 (has no name): ()  1x1+0+0  +0+36
+        0x600473 (has no name): ()  1x1+0+0  +0+36
+        0x600472 (has no name): ()  1x1+0+0  +0+36
+        0x600471 (has no name): ()  1x1+0+0  +0+36
+        0x600470 (has no name): ()  1x1+0+0  +0+36
+        0x60046f (has no name): ()  1x1+0+0  +0+36
+        0x60046e (has no name): ()  1x1+0+0  +0+36
+        0x60046d (has no name): ()  1x1+0+0  +0+36
+        0x60046c (has no name): ()  1x1+0+0  +0+36
+        0x60046b (has no name): ()  1x1+0+0  +0+36
+        0x60046a (has no name): ()  1x1+0+0  +0+36
+        0x600469 (has no name): ()  1x1+0+0  +0+36
+        0x600468 (has no name): ()  1x1+0+0  +0+36
+        0x600467 (has no name): ()  1x1+0+0  +0+36
+        0x600466 (has no name): ()  1x1+0+0  +0+36
+        0x600465 (has no name): ()  1x1+0+0  +0+36
+        0x600464 (has no name): ()  1x1+0+0  +0+36
+        0x600463 (has no name): ()  1x1+0+0  +0+36
+        0x600462 (has no name): ()  1x1+0+0  +0+36
+        0x600461 (has no name): ()  1x1+0+0  +0+36
+        0x600460 (has no name): ()  1x1+0+0  +0+36
+        0x60045f (has no name): ()  1x1+0+0  +0+36
+        0x60045e (has no name): ()  26x1+459+344  +459+380
+        0x60045d (has no name): ()  1x1+0+0  +0+36
+        0x60045c (has no name): ()  1x25+485+320  +485+356
+        0x60045b (has no name): ()  26x1+1+344  +1+380
+        0x60045a (has no name): ()  1x1+0+0  +0+36
+        0x600459 (has no name): ()  1x25+0+320  +0+356
+        0x600458 (has no name): ()  432x1+27+344  +27+380
+        0x600457 (has no name): ()  1x1+0+0  +0+36
+        0x600452 (has no name): ()  1x1+0+0  +0+36
+           4 children:
+           0x600456 (has no name): ()  1x1+0+0  +0+36
+           0x600455 (has no name): ()  1x1+0+0  +0+36
+           0x600454 (has no name): ()  1x1+0+0  +0+36
+           0x600453 (has no name): ()  1x1+0+0  +0+36
+        0x60044a (has no name): ()  1x295+485+26  +485+62
+        0x600449 (has no name): ()  1x295+0+26  +0+62
+        0x600443 (has no name): ()  484x1+1+27  +1+63
+        0x600442 (has no name): ()  1x25+485+1  +485+37
+        0x600441 (has no name): ()  26x1+460+0  +460+36
+        0x600440 (has no name): ()  26x1+0+0  +0+36
+        0x60043f (has no name): ()  434x1+26+0  +26+36
+        0x60043e (has no name): ()  1x25+0+1  +0+37
+        0x60043d (has no name): ()  484x26+1+1  +1+37
+           12 children:
+           0x600451 (has no name): ()  12x12+415+7  +416+44
+           0x600450 (has no name): ()  14x14+11+6  +12+43
+           0x60044f (has no name): ()  12x12+0+0  +1+37
+           0x60044e (has no name): ()  12x12+0+0  +1+37
+           0x60044d (has no name): ()  12x12+461+7  +462+44
+           0x60044c (has no name): ()  12x12+438+7  +439+44
+           0x60044b (has no name): ()  368x14+36+6  +37+43
+           0x600448 (has no name): ()  11x26+473+0  +474+37
+           0x600447 (has no name): ()  25x7+459+0  +460+37
+           0x600446 (has no name): ()  11x26+0+0  +1+37
+           0x600445 (has no name): ()  25x7+0+0  +1+37
+           0x600444 (has no name): ()  434x7+25+0  +26+37
+        0x600438 (has no name): ()  1x1+0+0  +0+36
+           2 children:
+           0x60043a (has no name): ()  1x1+0+0  +0+36
+           0x600439 (has no name): ()  1x1+0+0  +0+36
+        0x600437 (has no name): ()  1x1+0+0  +0+36
+           1 child:
+           0x60043c (has no name): ()  1x1+0+0  +0+36
+        0x600436 (has no name): ()  1x1+0+0  +0+36
+        0x600435 (has no name): ()  1x1+0+0  +0+36
+           1 child:
+           0x60043b (has no name): ()  1x1+0+0  +0+36
+        0x600433 (has no name): ()  484x316+1+28  +1+64
+           1 child:
+           0x600434 (has no name): ()  484x316+0+0  +1+64
+     0x600374 (has no name): ()  1920x1044+0+36  +0+36
+        56 children:
+        0x1e00003 "sweep.html - Chromium": ("chromium" "Chromium")  1920x1044+0+0  +0+36
+        0x6003c0 (has no name): ()  1x1+0+0  +0+36
+        0x6003bf (has no name): ()  1x1+0+0  +0+36
+        0x6003be (has no name): ()  1x1+0+0  +0+36
+        0x6003bd (has no name): ()  1x1+0+0  +0+36
+        0x6003bc (has no name): ()  1x1+0+0  +0+36
+        0x6003bb (has no name): ()  1x1+0+0  +0+36
+        0x6003ba (has no name): ()  1x1+0+0  +0+36
+        0x6003b9 (has no name): ()  1x1+0+0  +0+36
+        0x6003b8 (has no name): ()  1x1+0+0  +0+36
+        0x6003b7 (has no name): ()  1x1+0+0  +0+36
+        0x6003b6 (has no name): ()  1x1+0+0  +0+36
+        0x6003b5 (has no name): ()  1x1+0+0  +0+36
+        0x6003b4 (has no name): ()  1x1+0+0  +0+36
+        0x6003b3 (has no name): ()  1x1+0+0  +0+36
+        0x6003b2 (has no name): ()  1x1+0+0  +0+36
+        0x6003b1 (has no name): ()  1x1+0+0  +0+36
+        0x6003b0 (has no name): ()  1x1+0+0  +0+36
+        0x6003af (has no name): ()  1x1+0+0  +0+36
+        0x6003ae (has no name): ()  1x1+0+0  +0+36
+        0x6003ad (has no name): ()  1x1+0+0  +0+36
+        0x6003ac (has no name): ()  1x1+0+0  +0+36
+        0x6003ab (has no name): ()  1x1+0+0  +0+36
+        0x6003aa (has no name): ()  1x1+0+0  +0+36
+        0x6003a9 (has no name): ()  1x1+0+0  +0+36
+        0x6003a8 (has no name): ()  1x1+0+0  +0+36
+        0x6003a7 (has no name): ()  1x1+0+0  +0+36
+        0x6003a6 (has no name): ()  1x1+0+0  +0+36
+        0x6003a5 (has no name): ()  1x1+0+0  +0+36
+        0x6003a4 (has no name): ()  1x1+0+0  +0+36
+        0x6003a3 (has no name): ()  1x1+0+0  +0+36
+        0x6003a2 (has no name): ()  1x1+0+0  +0+36
+        0x6003a1 (has no name): ()  1x1+0+0  +0+36
+        0x6003a0 (has no name): ()  1x1+0+0  +0+36
+        0x60039f (has no name): ()  1x1+0+0  +0+36
+        0x60039e (has no name): ()  1x1+0+0  +0+36
+        0x60039d (has no name): ()  1x1+0+0  +0+36
+        0x60039c (has no name): ()  1x1+0+0  +0+36
+        0x60039b (has no name): ()  1x1+0+0  +0+36
+        0x60039a (has no name): ()  1x1+0+0  +0+36
+        0x600399 (has no name): ()  1x1+0+0  +0+36
+        0x600394 (has no name): ()  1x1+0+0  +0+36
+           4 children:
+           0x600398 (has no name): ()  1x1+0+0  +0+36
+           0x600397 (has no name): ()  1x1+0+0  +0+36
+           0x600396 (has no name): ()  1x1+0+0  +0+36
+           0x600395 (has no name): ()  1x1+0+0  +0+36
+        0x60038c (has no name): ()  1x1+0+0  +0+36
+        0x60038b (has no name): ()  1x1+0+0  +0+36
+        0x600385 (has no name): ()  1x1+0+0  +0+36
+        0x600384 (has no name): ()  1x1+0+0  +0+36
+        0x600383 (has no name): ()  1x1+0+0  +0+36
+        0x600382 (has no name): ()  1x1+0+0  +0+36
+        0x600381 (has no name): ()  1x1+0+0  +0+36
+        0x600380 (has no name): ()  1x1+0+0  +0+36
+        0x60037f (has no name): ()  1x1+0+0  +0+36
+           12 children:
+           0x600393 (has no name): ()  12x12+0+0  +0+36
+           0x600392 (has no name): ()  14x14+0+0  +0+36
+           0x600391 (has no name): ()  12x12+0+0  +0+36
+           0x600390 (has no name): ()  12x12+0+0  +0+36
+           0x60038f (has no name): ()  12x12+0+0  +0+36
+           0x60038e (has no name): ()  12x12+0+0  +0+36
+           0x60038d (has no name): ()  1x1+0+0  +0+36
+           0x60038a (has no name): ()  11x26+0+0  +0+36
+           0x600389 (has no name): ()  25x7+0+0  +0+36
+           0x600388 (has no name): ()  11x26+0+0  +0+36
+           0x600387 (has no name): ()  25x7+0+0  +0+36
+           0x600386 (has no name): ()  1x1+0+0  +0+36
+        0x60037a (has no name): ()  1x1+0+0  +0+36
+           2 children:
+           0x60037c (has no name): ()  1x1+0+0  +0+36
+           0x60037b (has no name): ()  1x1+0+0  +0+36
+        0x600379 (has no name): ()  1x1+0+0  +0+36
+           1 child:
+           0x60037e (has no name): ()  1x1+0+0  +0+36
+        0x600378 (has no name): ()  1x1+0+0  +0+36
+        0x600377 (has no name): ()  1x1+0+0  +0+36
+           1 child:
+           0x60037d (has no name): ()  1x1+0+0  +0+36
+        0x600375 (has no name): ()  1920x1044+0+0  +0+36
+           1 child:
+           0x600376 (has no name): ()  1920x1044+0+0  +0+36
+     0x600303 (has no name): ()  658x465+631+325  +631+325
+        56 children:
+        0x1a00003 "sentineldesk@60c97d694cc8: /": ("lxterminal" "Lxterminal")  656x436+1+28  +632+353
+           1 child:
+           0x1a00004 (has no name): ()  1x1+-1+-1  +631+352
+        0x60034f (has no name): ()  1x1+0+0  +631+325
+        0x60034e (has no name): ()  1x1+0+0  +631+325
+        0x60034d (has no name): ()  1x1+0+0  +631+325
+        0x60034c (has no name): ()  1x1+0+0  +631+325
+        0x60034b (has no name): ()  1x1+0+0  +631+325
+        0x60034a (has no name): ()  1x1+0+0  +631+325
+        0x600349 (has no name): ()  1x1+0+0  +631+325
+        0x600348 (has no name): ()  1x1+0+0  +631+325
+        0x600347 (has no name): ()  1x1+0+0  +631+325
+        0x600346 (has no name): ()  1x1+0+0  +631+325
+        0x600345 (has no name): ()  1x1+0+0  +631+325
+        0x600344 (has no name): ()  1x1+0+0  +631+325
+        0x600343 (has no name): ()  1x1+0+0  +631+325
+        0x600342 (has no name): ()  1x1+0+0  +631+325
+        0x600341 (has no name): ()  1x1+0+0  +631+325
+        0x600340 (has no name): ()  1x1+0+0  +631+325
+        0x60033f (has no name): ()  1x1+0+0  +631+325
+        0x60033e (has no name): ()  1x1+0+0  +631+325
+        0x60033d (has no name): ()  1x1+0+0  +631+325
+        0x60033c (has no name): ()  1x1+0+0  +631+325
+        0x60033b (has no name): ()  1x1+0+0  +631+325
+        0x60033a (has no name): ()  1x1+0+0  +631+325
+        0x600339 (has no name): ()  1x1+0+0  +631+325
+        0x600338 (has no name): ()  1x1+0+0  +631+325
+        0x600337 (has no name): ()  1x1+0+0  +631+325
+        0x600336 (has no name): ()  1x1+0+0  +631+325
+        0x600335 (has no name): ()  1x1+0+0  +631+325
+        0x600334 (has no name): ()  1x1+0+0  +631+325
+        0x600333 (has no name): ()  1x1+0+0  +631+325
+        0x600332 (has no name): ()  1x1+0+0  +631+325
+        0x600331 (has no name): ()  1x1+0+0  +631+325
+        0x600330 (has no name): ()  1x1+0+0  +631+325
+        0x60032f (has no name): ()  26x1+631+464  +1262+789
+        0x60032e (has no name): ()  1x1+0+0  +631+325
+        0x60032d (has no name): ()  1x25+657+440  +1288+765
+        0x60032c (has no name): ()  26x1+1+464  +632+789
+        0x60032b (has no name): ()  1x1+0+0  +631+325
+        0x60032a (has no name): ()  1x25+0+440  +631+765
+        0x600329 (has no name): ()  604x1+27+464  +658+789
+        0x600328 (has no name): ()  1x1+0+0  +631+325
+        0x600323 (has no name): ()  1x1+0+0  +631+325
+           4 children:
+           0x600327 (has no name): ()  1x1+0+0  +631+325
+           0x600326 (has no name): ()  1x1+0+0  +631+325
+           0x600325 (has no name): ()  1x1+0+0  +631+325
+           0x600324 (has no name): ()  1x1+0+0  +631+325
+        0x60031b (has no name): ()  1x415+657+26  +1288+351
+        0x60031a (has no name): ()  1x415+0+26  +631+351
+        0x600314 (has no name): ()  656x1+1+27  +632+352
+        0x600313 (has no name): ()  1x25+657+1  +1288+326
+        0x600312 (has no name): ()  26x1+632+0  +1263+325
+        0x600311 (has no name): ()  26x1+0+0  +631+325
+        0x600310 (has no name): ()  606x1+26+0  +657+325
+        0x60030f (has no name): ()  1x25+0+1  +631+326
+        0x60030e (has no name): ()  656x26+1+1  +632+326
+           12 children:
+           0x600322 (has no name): ()  12x12+587+7  +1219+333
+           0x600321 (has no name): ()  14x14+11+6  +643+332
+           0x600320 (has no name): ()  12x12+0+0  +632+326
+           0x60031f (has no name): ()  12x12+0+0  +632+326
+           0x60031e (has no name): ()  12x12+633+7  +1265+333
+           0x60031d (has no name): ()  12x12+610+7  +1242+333
+           0x60031c (has no name): ()  540x14+36+6  +668+332
+           0x600319 (has no name): ()  11x26+645+0  +1277+326
+           0x600318 (has no name): ()  25x7+631+0  +1263+326
+           0x600317 (has no name): ()  11x26+0+0  +632+326
+           0x600316 (has no name): ()  25x7+0+0  +632+326
+           0x600315 (has no name): ()  606x7+25+0  +657+326
+        0x600309 (has no name): ()  1x1+0+0  +631+325
+           2 children:
+           0x60030b (has no name): ()  1x1+0+0  +631+325
+           0x60030a (has no name): ()  1x1+0+0  +631+325
+        0x600308 (has no name): ()  1x1+0+0  +631+325
+           1 child:
+           0x60030d (has no name): ()  1x1+0+0  +631+325
+        0x600307 (has no name): ()  1x1+0+0  +631+325
+        0x600306 (has no name): ()  1x1+0+0  +631+325
+           1 child:
+           0x60030c (has no name): ()  1x1+0+0  +631+325
+        0x600304 (has no name): ()  656x436+1+28  +632+353
+           1 child:
+           0x600305 (has no name): ()  656x436+0+0  +632+353
+     0x6001c2 (has no name): ()  1920x1080+0+0  +0+0
+        56 children:
+        0xa00003 "pcmanfm": ("pcmanfm" "Pcmanfm")  1920x1080+0+0  +0+0
+           1 child:
+           0xa00004 (has no name): ()  1x1+-1+-1  +-1+-1
+        0x60020e (has no name): ()  1x1+0+0  +0+0
+        0x60020d (has no name): ()  1x1+0+0  +0+0
+        0x60020c (has no name): ()  1x1+0+0  +0+0
+        0x60020b (has no name): ()  1x1+0+0  +0+0
+        0x60020a (has no name): ()  1x1+0+0  +0+0
+        0x600209 (has no name): ()  1x1+0+0  +0+0
+        0x600208 (has no name): ()  1x1+0+0  +0+0
+        0x600207 (has no name): ()  1x1+0+0  +0+0
+        0x600206 (has no name): ()  1x1+0+0  +0+0
+        0x600205 (has no name): ()  1x1+0+0  +0+0
+        0x600204 (has no name): ()  1x1+0+0  +0+0
+        0x600203 (has no name): ()  1x1+0+0  +0+0
+        0x600202 (has no name): ()  1x1+0+0  +0+0
+        0x600201 (has no name): ()  1x1+0+0  +0+0
+        0x600200 (has no name): ()  1x1+0+0  +0+0
+        0x6001ff (has no name): ()  1x1+0+0  +0+0
+        0x6001fe (has no name): ()  1x1+0+0  +0+0
+        0x6001fd (has no name): ()  1x1+0+0  +0+0
+        0x6001fc (has no name): ()  1x1+0+0  +0+0
+        0x6001fb (has no name): ()  1x1+0+0  +0+0
+        0x6001fa (has no name): ()  1x1+0+0  +0+0
+        0x6001f9 (has no name): ()  1x1+0+0  +0+0
+        0x6001f8 (has no name): ()  1x1+0+0  +0+0
+        0x6001f7 (has no name): ()  1x1+0+0  +0+0
+        0x6001f6 (has no name): ()  1x1+0+0  +0+0
+        0x6001f5 (has no name): ()  1x1+0+0  +0+0
+        0x6001f4 (has no name): ()  1x1+0+0  +0+0
+        0x6001f3 (has no name): ()  1x1+0+0  +0+0
+        0x6001f2 (has no name): ()  1x1+0+0  +0+0
+        0x6001f1 (has no name): ()  1x1+0+0  +0+0
+        0x6001f0 (has no name): ()  1x1+0+0  +0+0
+        0x6001ef (has no name): ()  1x1+0+0  +0+0
+        0x6001ee (has no name): ()  1x1+0+0  +0+0
+        0x6001ed (has no name): ()  1x1+0+0  +0+0
+        0x6001ec (has no name): ()  1x1+0+0  +0+0
+        0x6001eb (has no name): ()  1x1+0+0  +0+0
+        0x6001ea (has no name): ()  1x1+0+0  +0+0
+        0x6001e9 (has no name): ()  1x1+0+0  +0+0
+        0x6001e8 (has no name): ()  1x1+0+0  +0+0
+        0x6001e7 (has no name): ()  1x1+0+0  +0+0
+        0x6001e2 (has no name): ()  1x1+0+0  +0+0
+           4 children:
+           0x6001e6 (has no name): ()  1x1+0+0  +0+0
+           0x6001e5 (has no name): ()  1x1+0+0  +0+0
+           0x6001e4 (has no name): ()  1x1+0+0  +0+0
+           0x6001e3 (has no name): ()  1x1+0+0  +0+0
+        0x6001da (has no name): ()  1x1+0+0  +0+0
+        0x6001d9 (has no name): ()  1x1+0+0  +0+0
+        0x6001d3 (has no name): ()  1x1+0+0  +0+0
+        0x6001d2 (has no name): ()  1x1+0+0  +0+0
+        0x6001d1 (has no name): ()  1x1+0+0  +0+0
+        0x6001d0 (has no name): ()  1x1+0+0  +0+0
+        0x6001cf (has no name): ()  1x1+0+0  +0+0
+        0x6001ce (has no name): ()  1x1+0+0  +0+0
+        0x6001cd (has no name): ()  1x1+0+0  +0+0
+           12 children:
+           0x6001e1 (has no name): ()  12x12+0+0  +0+0
+           0x6001e0 (has no name): ()  14x14+0+0  +0+0
+           0x6001df (has no name): ()  12x12+0+0  +0+0
+           0x6001de (has no name): ()  12x12+0+0  +0+0
+           0x6001dd (has no name): ()  12x12+0+0  +0+0
+           0x6001dc (has no name): ()  12x12+0+0  +0+0
+           0x6001db (has no name): ()  1x1+0+0  +0+0
+           0x6001d8 (has no name): ()  11x26+0+0  +0+0
+           0x6001d7 (has no name): ()  25x7+0+0  +0+0
+           0x6001d6 (has no name): ()  11x26+0+0  +0+0
+           0x6001d5 (has no name): ()  25x7+0+0  +0+0
+           0x6001d4 (has no name): ()  1x1+0+0  +0+0
+        0x6001c8 (has no name): ()  1x1+0+0  +0+0
+           2 children:
+           0x6001ca (has no name): ()  1x1+0+0  +0+0
+           0x6001c9 (has no name): ()  1x1+0+0  +0+0
+        0x6001c7 (has no name): ()  1x1+0+0  +0+0
+           1 child:
+           0x6001cc (has no name): ()  1x1+0+0  +0+0
+        0x6001c6 (has no name): ()  1x1+0+0  +0+0
+        0x6001c5 (has no name): ()  1x1+0+0  +0+0
+           1 child:
+           0x6001cb (has no name): ()  1x1+0+0  +0+0
+        0x6001c3 (has no name): ()  1920x1080+0+0  +0+0
+           1 child:
+           0x6001c4 (has no name): ()  1920x1080+0+0  +0+0
+
+Qué hizo:
+  Recorrió el árbol de ventanas de X, reportando padres, hijos y override-redirect.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  La respuesta correcta para preguntas que la lista EWMH no puede expresar — tooltips,
+  menús y popups son override-redirect y nunca aparecen en list_windows. Combinarla
+  con el árbol de accesibilidad sería el paso siguiente, pero eso es una herramienta
+  nueva y no un cambio a esta.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #40   [ok]   [efecto verificado fuera de MCP]
+move_window: Mover una ventana a una posición
+Argumentos enviados: {"id": "0x0180000c", "x": 120, "y": 120}
+Result: moved
+
+Qué hizo:
+  Movió una ventana con _NET_MOVERESIZE_WINDOW, marcando sólo los campos que fija.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Los flags son lo que hace expresable 'mover sin redimensionar': el camino viejo
+  armaba un string de geometría y pasaba centinelas -1 que el gestor después tenía que
+  ignorar. Verificado contra un escritorio real — un move seguido de un resize
+  conserva la posición que se le dio.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #41   [ok]   [efecto verificado fuera de MCP]
+resize_window: Redimensionar una ventana
+Argumentos enviados: {"height": 400, "id": "0x0180000c", "width": 640}
+Result: resized
+
+Qué hizo:
+  Redimensionó por el mismo mensaje, dejando la posición en paz.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Comparte MoveResize con move_window, que es lo correcto: una llamada que dice qué
+  campos quiere decir le gana a dos que fingen fijar todo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #42   [ok]   [efecto verificado fuera de MCP]
+minimize_window: Minimizar una ventana
+Argumentos enviados: {"id": "0x0180000c"}
+Result: minimized
+
+Qué hizo:
+  Iconificó con un mensaje WM_CHANGE_STATE llevando IconicState.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  El pedido correcto, y la parte sutil: _NET_WM_STATE_HIDDEN es lo que un gestor FIJA
+  para reportar que una ventana está minimizada, no algo que un cliente pide. Usarlo
+  habría sido la respuesta equivocada más plausible. Esto además sacó la última
+  dependencia de xdotool de la familia de ventanas.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #43   [ok]   [efecto verificado fuera de MCP]
+activate_window: Bring the minimised window back
+Argumentos enviados: {"id": "0x0180000c"}
+Result: activated window 0x0180000c
+
+Qué hizo:
+  Enfocó y trajo al frente una ventana con un mensaje de cliente _NET_ACTIVE_WINDOW.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Pedirle al gestor de ventanas en vez de levantar la ventana a sus espaldas, que es
+  lo que la hace funcionar con un gestor que reparenta y decora. El mensaje lleva una
+  indicación de origen, así que las reglas de robo de foco tratan a un agente como a
+  cualquier cosa que pidió el usuario.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #44   [ok]   [efecto verificado fuera de MCP]
+maximize_window: Maximizar una ventana
+Argumentos enviados: {"id": "0x0180000c"}
+Result: maximized
+
+Qué hizo:
+  Agregó los dos estados de maximizado en un solo mensaje _NET_WM_STATE.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Dos estados por mensaje es lo que permite el protocolo y lo que este caso necesita —
+  un cambio sobre el que el gestor puede actuar, en vez de dos que tiene que
+  reconciliar. Restore devolvió la ventana a la geometría exacta que tenía antes,
+  porque el gestor la recuerda y esto pidió en vez de redimensionar.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #45   [ok]   [efecto verificado fuera de MCP]
+restore_window: Un-maximise a window back to its previous size
+Argumentos enviados: {"id": "0x0180000c"}
+Result: restored
+
+Qué hizo:
+  Sacó los dos estados de maximizado.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  La inversa correcta, y no intenta recordar una geometría que el gestor de ventanas
+  ya tiene.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #46   [ok]   [efecto verificado fuera de MCP]
+fullscreen_window: Poner una ventana en pantalla completa
+Argumentos enviados: {"id": "0x0180000c"}
+Result: toggled fullscreen
+
+Qué hizo:
+  Fijó, quitó o alternó _NET_WM_STATE_FULLSCREEN, con action por defecto en toggle.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Antes sólo alternaba, así que un agente que quería una ventana en pantalla completa
+  tenía que leer el estado y adivinar para dónde iba el toggle. Nombrar la acción lo
+  arregla sin cambiarle nada a quien ya la llamaba.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #47   [ok]
+window_set_state: Cambiar un estado EWMH como 'above'
+Argumentos enviados: {"action": "add", "id": "0x0180000c", "state": "above"}
+Result: add above en 0x0180000c
+
+Qué hizo:
+  Fijó un estado EWMH — above, below, sticky, shaded, skip_taskbar y el resto — con un
+  add, remove o toggle explícito.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  La herramienta mejor formada de la familia de ventanas: nombra el estado y la acción
+  en vez de esconder los dos detrás de un verbo, que es lo que fullscreen_window
+  debería haber hecho. Podría reemplazar de plano a maximize, restore y fullscreen,
+  dejando una herramienta donde hay cuatro.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #48   [ok]
+set_window_desktop: Mandar una ventana a un escritorio virtual
+Argumentos enviados: {"desktop": 0, "id": "0x0180000c"}
+Result: moved to desktop
+
+Qué hizo:
+  Movió una ventana a un escritorio virtual con _NET_WM_DESKTOP.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Nativo, y los índices coinciden con lo que reporta list_desktops porque ahora las
+  dos leen las mismas propiedades.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #49   [ok]
+switch_desktop: Cambiar a otro escritorio virtual
+Argumentos enviados: {"desktop": 0}
+Result: switched desktop
+
+Qué hizo:
+  Cambió el escritorio actual con _NET_CURRENT_DESKTOP.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Nativo. Lo que sigue faltando es cambiar por nombre — list_desktops ya lee
+  _NET_DESKTOP_NAMES, así que los nombres existen y sólo esta punta no puede tomar
+  uno.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #50   [ok]   [efecto verificado fuera de MCP]
+close_window: Cerrar la ventana que abrió el barrido
+Argumentos enviados: {"id": "0x0180000c"}
+Result: closed window
+
+Qué hizo:
+  Le pidió a la ventana que se cierre con _NET_CLOSE_WINDOW — el pedido propio del
+  botón de la barra de título.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  El cierre cortés: la aplicación puede guardar, objetar o poner un diálogo. Sigue sin
+  poder reportar si la ventana efectivamente se fue, porque es un pedido y la
+  respuesta llega después. Esperar un momento y releer la lista de clientes
+  convertiría 'pedido' en 'cerrada'.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Terminal
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #51   [ok]
+terminal_open: Abrir una terminal que una persona pueda mirar
+Argumentos enviados: ninguno
+Result: {
+  "exit_codes": true,
+  "note": "exit codes are reported. Use `sudo -E su` rather than `sudo su` to keep them across a root shell.",
+  "opened": true
+}
+
+Qué hizo:
+  Abrió un emulador de terminal en el escritorio, visible para quien esté mirando, con
+  una shell que reporta su código de salida.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  El punto no es que un agente necesite una terminal — para eso está run_command —
+  sino que una persona mirando pueda ver qué está haciendo. Esa es una decisión de
+  producto que vale el costo. No puede reutilizar una terminal que abrió una persona,
+  así que agente y persona terminan con dos.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #52   [ok]   [efecto verificado fuera de MCP]
+terminal_run: Tipear un comando en esa terminal y esperar el prompt
+Argumentos enviados: {"command": "echo sweep-terminal-ok > /tmp/sweep-terminal.txt", "timeout_ms": 30000}
+Result: {
+  "command": "echo sweep-terminal-ok \u003e /tmp/sweep-terminal.txt",
+  "exit_code": 0,
+  "finished": true,
+  "output": "echo sweep-terminal-ok \u003e /tmp/sweep-terminal.txt\nsentineldesk@60c97d694cc8:/$",
+  "succeeded": true
+}
+
+Qué hizo:
+  Tipeó un comando en la terminal con xdotool, esperó a que volviera el prompt y
+  reportó el código de salida — contando las terminales primero para que un comando
+  que cierra la shell no se espere hasta el timeout.
+
+Puntaje del método: 3/5  ●●●○○
+
+Cómo llevarla más lejos:
+  El cuidado que tiene es real: xdotool en vez de XTEST crudo porque remapea keycodes
+  para los caracteres de los que están llenas las líneas de comando, y el chequeo de
+  cantidad de terminales existe porque un ref posicional empieza a resolver a otra
+  ventana en silencio. Pero sigue siendo tipear en una pantalla y leer un prompt de
+  vuelta. Hacer eco de un centinela con el código de salida y esperar ese string
+  exacto sacaría la heurística del prompt por completo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #53   [ok]
+terminal_read: Leer lo que muestra la terminal
+Argumentos enviados: {"lines": 10}
+Result: {
+  "last_command": "echo sweep-terminal-ok \u003e /tmp/sweep-terminal.txt",
+  "last_exit_code": 0,
+  "last_succeeded": true,
+  "text": "sentineldesk@60c97d694cc8:/$ echo sweep-terminal-ok \u003e /tmp/sweep-terminal.txt\nsentineldesk@60c97d694cc8:/$"
+}
+
+Qué hizo:
+  Leyó el texto visible de la terminal por el árbol de accesibilidad.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Leer el texto propio del emulador en vez de hacer OCR de sus píxeles es la elección
+  correcta y el motivo por el que esto es usable. Ve sólo lo que está en pantalla, así
+  que la salida que scrolleó ya no está — que es la diferencia entre esta y
+  shell_read.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Archivos
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #54   [ok]   [efecto verificado fuera de MCP]
+write_file: Escribir un archivo, opcionalmente como root
+Argumentos enviados: {"content": "sentineldesk sweep\n", "path": "/tmp/sweep.txt"}
+Result: wrote 19 bytes to /tmp/sweep.txt
+
+Qué hizo:
+  Escribió un archivo directo, o por un ayudante privilegiado para as_root, con append
+  y modo como opciones.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  La misma forma que read_file y el mismo razonamiento. Bien clasificada como
+  peligrosa. Lo único que no puede hacer es escribir de forma atómica — una escritura
+  parcial es visible para cualquiera que esté mirando el archivo — lo que importa para
+  configuración que un servicio está leyendo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #55   [ok]   [efecto verificado fuera de MCP]
+read_file: Leer el archivo de vuelta
+Argumentos enviados: {"path": "/tmp/sweep.txt"}
+Result: sentineldesk sweep
+
+Qué hizo:
+  Leyó un archivo con os.ReadFile, o por cat bajo sudo cuando se pide as_root, dado
+  que el daemon corre sin privilegios.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  La división es exactamente la correcta: el camino común es una lectura directa sin
+  proceso, y el privilegio es un pedido explícito en vez de algo que el daemon
+  sostiene. max_bytes evita que quien llama se llene su propio contexto con un archivo
+  de log. Nada que mejorar.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #56   [ok]
+list_directory: Listar un directorio
+Argumentos enviados: {"path": "/tmp"}
+Result: [
+  {
+    "modified": "2026-08-07T07:44:08-03:00",
+    "name": ".X0-lock",
+    "size": 11,
+    "type": "file"
+  },
+  {
+    "modified": "2026-08-07T07:44:08-03:00",
+    "name": ".X11-unix",
+    "size": 4096,
+    "type": "dir"
+  },
+  {
+    "modified": "2026-08-07T07:45:50-03:00",
+    "name": "org.chromium.Chromium.A8Qssm",
+    "size": 4096,
+    "type": "dir"
+  },
+  {
+    "modified": "2026-08-06T20:38:19-03:00",
+    "name": "packages",
+    "size": 4096,
+    "type": "dir"
+  },
+  {
+    "modified": "2026-08-07T07:47:30-03:00",
+    "name": "sentineldesk-rc",
+    "size": 51,
+    "type": "file"
+  },
+  {
+    "modified": "2026-08-07T07:44:07-03:00",
+    "name": "supervisor.sock",
+    "size": 0,
+    "type": "file"
+  },
+  {
+    "modified": "2026-08-07T07:44:07-03:00",
+    "name": "supervisord.pid",
+    "size": 2,
+    "type": "file"
+  },
+  {
+    "modified": "2026-08-07T07:46:06-03:00",
+    "name": "sweep-down.txt",
+    "size": 19,
+    "type": "file"
+  },
+  {
+    "modified": "2026-08-07T07:45:58-03:00",
+    "name": "sweep-input.txt",
+    "size": 7,
+    "type": "file"
+  },
+  {
+    "modified": "2026-08-07T07:45:57-03:00",
+    "name": "sweep-shell.txt",
+    "size": 15,
+    "type": "file"
+  },
+  {
+    "modified": "2026-08-07T07:47:30-03:00",
+    "name": "sweep-terminal.txt",
+    "size": 18,
+    "type": "file"
+  },
+  {
+    "modified": "2026-08-07T07:45:49-03:00",
+    "name": "sweep.html",
+    "size": 148,
+    "type": "file"
+  },
+  {
+    "modified": "2026-08-07T07:47:32-03:00",
+    "name": "sweep.txt",
+    "size": 19,
+    "type": "file"
+  }
+]
+
+Qué hizo:
+  Listó un directorio con nombres, tamaños, tipos y fechas de modificación.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Directa, y devuelve los campos por los que si no habría que hacer una segunda
+  llamada. Nada que cambiar.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Navegador, por DevTools
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #57   [ok]
+browser_open: Arrancar Chromium con DevTools y esperar a que responda
+Argumentos enviados: {"url": "file:///tmp/sweep.html"}
+Result: loaded file:///tmp/sweep.html
+
+Qué hizo:
+  Arrancó Chromium con el puerto de depuración, sondeó hasta que CDP respondió, y
+  después esperó a que terminara de cargar la página pedida.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  El sondeo está bien acá y en ningún otro lugar de las herramientas de navegador:
+  antes de que un proceso empiece a escuchar no hay evento que esperar, porque el
+  socket que lo llevaría es justamente lo que se está esperando. Lo que estaba mal era
+  el final — informaba el navegador abierto mientras la página que le habían pasado
+  por línea de comandos seguía cargando. Preguntarle al documento resuelve eso sin
+  carrera, porque uno ya completo resuelve al instante y uno cargando resuelve con su
+  propio evento de carga. Los cuarenta segundos de sondeo todavía se pueden acortar:
+  Chromium escribe su endpoint de DevTools en un archivo del directorio de perfil
+  cuando está listo, y vigilar eso convertiría el último sondeo de este archivo en una
+  respuesta.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #58   [ok]
+browser_wait_for: Esperar a que exista un selector CSS
+Argumentos enviados: {"selector": "#t", "timeout_ms": 15000}
+Result: #t appeared
+
+Qué hizo:
+  Esperó desde adentro de la página: un solo evaluate cuya promesa resuelve un
+  MutationObserver en cuanto aparece un nodo que coincide.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Antes le preguntaba al navegador cincuenta veces si el nodo había aparecido, y cada
+  una de esas preguntas abría un WebSocket nuevo, corría una consulta y lo cerraba —
+  un handshake completo tres veces por segundo para que le dijeran 'todavía no'. Un
+  MutationObserver mueve la espera a donde ocurre el cambio, que es lo que hace
+  Playwright y por la misma razón: la página ya lo sabe. Medido contra un elemento
+  insertado cuatro segundos después de la carga devolvió a los 4.00s, y las conexiones
+  al puerto de depuración se mantuvieron en dos durante toda la espera en vez de
+  rotar. Queda el caso que el observador no sobrevive: una navegación a mitad de la
+  espera destruye el contexto de ejecución y se lleva la promesa. Eso ahora se reporta
+  como lo que es y no como un error de protocolo pelado, pero rearmarlo sobre el
+  documento nuevo sería mejor que reportarlo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #59   [ok]
+browser_tabs: Listar las pestañas abiertas
+Argumentos enviados: ninguno
+Result: [
+  {
+    "id": "4EA23CB19B51C96D50BE5C71F595E6CC",
+    "title": "sweep.html",
+    "url": "file:///tmp/sweep.html"
+  }
+]
+
+Qué hizo:
+  Listó los targets abiertos por el endpoint HTTP de CDP.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  La fuente autoritativa — esto es lo que el navegador dice de sí mismo. Abre un
+  cliente HTTP nuevo por llamada, que acá es barato pero es parte de un patrón que
+  comparte toda la familia.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #60   [ok]
+browser_goto: Navegar en la pestaña actual
+Argumentos enviados: {"url": "file:///tmp/sweep.html"}
+Result: loaded file:///tmp/sweep.html
+
+Qué hizo:
+  Navegó con Page.navigate y volvió recién cuando se disparó el evento de carga.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Antes asignaba location.href y contestaba 'navigating' — cierto en el instante en
+  que se decía y viejo para cuando alguien lo leía, así que toda herramienta llamada
+  después corría una carrera contra la página, y el arreglo habitual era que el modelo
+  adivinara un sleep. La descripción ya afirmaba que esperaba la carga; ahora la
+  espera. Page.navigate además expone lo que una asignación a href se traga: un
+  esquema inválido, una URL bloqueada, un host que no resuelve. Espera el evento de
+  carga o que el frame se detenga, lo que cubre una navegación respondida con una
+  descarga, y reporta el timeout como una navegación sin confirmar y no como un fallo,
+  porque la página suele estar. Una aplicación de una sola página que rutea sin cargar
+  documento es el caso que todavía no ve.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #61   [ok]
+browser_text: Leer el texto visible de la página
+Argumentos enviados: {"max_chars": 200}
+Result: Sweep
+Go
+
+Qué hizo:
+  Leyó el texto visible de la página a través del DOM.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Exacto donde hacer OCR de una ventana de navegador es adivinar, y respeta lo que
+  efectivamente se renderizó y no lo que dice el markup. Nada que cambiar a este
+  nivel.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #62   [ok]
+browser_type: Escribir en un campo por selector
+Argumentos enviados: {"selector": "#i", "text": "sweep"}
+Result: typed into #i
+
+Qué hizo:
+  Enfocó el campo, seleccionó lo que había e insertó el texto por Input.insertText,
+  así el cambio viene de la capa de input del navegador.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Antes asignaba el.value y disparaba un evento input sintético, que escribe algo que
+  la página puede ver y nada que la página crea. Los frameworks que rastrean su propio
+  valor reemplazan la propiedad value por un accessor y recuerdan lo último que
+  vieron, así que la asignación actualiza el rastreador de paso y el evento sintético
+  que sigue parece un no-cambio. Reproducido contra una página que implementa ese
+  rastreo: el campo mostraba "hello", la página contaba cero cambios, y la herramienta
+  reportaba éxito — así que un formulario se enviaría vacío y la validación nunca
+  correría. Input.insertText entra donde entra una tecla, y esa misma página ahora
+  cuenta el cambio. Verificado en input, textarea y contenteditable, reemplazando en
+  vez de concatenar, y con texto vacío vaciando el campo. Lo que todavía no hace es
+  emitir eventos de tecla por carácter, que un buscador que filtra mientras escribís o
+  un campo con máscara pueden estar escuchando.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #63   [ok]
+browser_click: Hacer clic en un elemento por selector
+Argumentos enviados: {"selector": "#b"}
+Result: clicked #b
+
+Qué hizo:
+  Llevó el elemento a la vista, comprobó qué hay realmente encima, y clickeó por
+  Input.dispatchMouseEvent en su centro.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  el.click() despachaba un solo click sintético y nada más: sin movimiento del
+  puntero, sin mousedown, sin mouseup, con isTrusted en falso. Medido sobre una página
+  que registra los cuatro, ahora produce pointerdown, mousedown, mouseup y click,
+  todos confiables. La reparación más útil es que ahora puede fallar: un click por DOM
+  nunca pregunta qué hay encima, así que un botón debajo de un banner de cookies o de
+  un modal se clickeaba igual y a quien llamaba se le decía que funcionó, mientras el
+  banner se llevaba el click. elementFromPoint resuelve eso antes de despachar, y un
+  elemento tapado se reporta por nombre. Queda pendiente: un elemento que necesita
+  hover para volverse clickeable sigue necesitando un movimiento aparte, porque el de
+  acá ocurre demasiado tarde para abrir nada.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #64   [ok]
+browser_eval: Evaluar JavaScript contra el DOM real
+Argumentos enviados: {"expression": "document.getElementById('t').textContent"}
+Result: clicked
+
+Qué hizo:
+  Evaluó JavaScript contra el DOM vivo por CDP.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  La herramienta más autoritativa de la familia del navegador: le pregunta a la página
+  misma en vez de a la foto que alguien tenga de ella. Bien clasificada como
+  peligrosa, porque es código arbitrario en el origen que esté cargado. Un WebSocket
+  nuevo por llamada es el costo compartido de la familia, no un defecto de esta.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== El árbol de accesibilidad
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #65   [ok]
+ui_tree: Leer el escritorio como estructura en vez de como píxeles
+Argumentos enviados: {"interactive": true, "limit": 40}
+Result: {
+  "count": 315,
+  "elements": [
+    {
+      "name": "lxpanel",
+      "ref": "0",
+      "role": "application"
+    },
+    {
+      "center_x": 960,
+      "center_y": 18,
+      "height": 36,
+      "name": "panel",
+      "ref": "0/0",
+      "role": "frame",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 1920,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "center_x": 18,
+      "center_y": 18,
+      "height": 36,
+      "name": "",
+      "ref": "0/0/0/1/0/0",
+      "role": "icon",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 28,
+      "x": 4,
+      "y": 0
+    },
+    {
+      "center_x": 53,
+      "center_y": 18,
+      "height": 28,
+      "name": "",
+      "ref": "0/0/0/3/0/0/0",
+      "role": "icon",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 28,
+      "x": 39,
+      "y": 4
+    },
+    {
+      "center_x": 84,
+      "center_y": 18,
+      "height": 28,
+      "name": "",
+      "ref": "0/0/0/3/0/1/0",
+      "role": "icon",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 28,
+      "x": 70,
+      "y": 4
+    },
+    {
+      "center_x": 115,
+      "center_y": 18,
+      "height": 28,
+      "name": "",
+      "ref": "0/0/0/3/0/2/0",
+      "role": "icon",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 28,
+      "x": 101,
+      "y": 4
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": 240,
+      "center_y": 18,
+      "description": "sentineldesk@60c97d694cc8: /",
+      "height": 32,
+      "name": "sentineldesk@60c97d694cc8: /",
+      "ref": "0/0/0/5/1/0",
+      "role": "toggle button",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 200,
+      "x": 140,
+      "y": 2
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": 442,
+      "center_y": 18,
+      "description": "sweep.html - Chromium",
+      "height": 32,
+      "name": "sweep.html - Chromium",
+      "ref": "0/0/0/5/1/1",
+      "role": "toggle button",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 200,
+      "x": 342,
+      "y": 2
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": 644,
+      "center_y": 18,
+      "description": "sentineldesk@60c97d694cc8: /",
+      "height": 32,
+      "name": "sentineldesk@60c97d694cc8: /",
+      "ref": "0/0/0/5/1/2",
+      "role": "toggle button",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 200,
+      "x": 544,
+      "y": 2
+    },
+    {
+      "center_x": 1892,
+      "center_y": 18,
+      "height": 36,
+      "name": "07:47",
+      "ref": "0/0/0/9/0/0",
+      "role": "label",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "text": "07:47",
+      "width": 44,
+      "x": 1870,
+      "y": 0
+    },
+    {
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "",
+      "ref": "0/0/0/9/0/1",
+      "role": "icon",
+      "state": [
+        "enabled"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "name": "pcmanfm",
+      "ref": "1",
+      "role": "application"
+    },
+    {
+      "name": "lxterminal",
+      "ref": "2",
+      "role": "application"
+    },
+    {
+      "center_x": 960,
+      "center_y": 557,
+      "height": 465,
+      "name": "sentineldesk@60c97d694cc8: /",
+      "ref": "2/0",
+      "role": "frame",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 658,
+      "x": 631,
+      "y": 325
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": 650,
+      "center_y": 365,
+      "height": 25,
+      "name": "File",
+      "ref": "2/0/0/0/0",
+      "role": "menu",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 36,
+      "x": 632,
+      "y": 353
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "New Window",
+      "ref": "2/0/0/0/0/1",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "New Tab",
+      "ref": "2/0/0/0/0/2",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Close Tab",
+      "ref": "2/0/0/0/0/4",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Close Window",
+      "ref": "2/0/0/0/0/5",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Empty",
+      "ref": "2/0/0/0/0/6",
+      "role": "menu item",
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": 687,
+      "center_y": 365,
+      "height": 25,
+      "name": "Edit",
+      "ref": "2/0/0/0/1",
+      "role": "menu",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 38,
+      "x": 668,
+      "y": 353
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Copy",
+      "ref": "2/0/0/0/1/1",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Paste",
+      "ref": "2/0/0/0/1/2",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Clear scrollback",
+      "ref": "2/0/0/0/1/3",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Zoom In",
+      "ref": "2/0/0/0/1/5",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Zoom Out",
+      "ref": "2/0/0/0/1/6",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Zoom Reset",
+      "ref": "2/0/0/0/1/7",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Preferences",
+      "ref": "2/0/0/0/1/9",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Empty",
+      "ref": "2/0/0/0/1/10",
+      "role": "menu item",
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": 728,
+      "center_y": 365,
+      "height": 25,
+      "name": "Tabs",
+      "ref": "2/0/0/0/2",
+      "role": "menu",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 44,
+      "x": 706,
+      "y": 353
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Name Tab",
+      "ref": "2/0/0/0/2/1",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Previous Tab",
+      "ref": "2/0/0/0/2/2",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Next Tab",
+      "ref": "2/0/0/0/2/3",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Move Tab Left",
+      "ref": "2/0/0/0/2/4",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Move Tab Right",
+      "ref": "2/0/0/0/2/5",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Empty",
+      "ref": "2/0/0/0/2/6",
+      "role": "menu item",
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": 771,
+      "center_y": 365,
+      "height": 25,
+      "name": "Help",
+      "ref": "2/0/0/0/3",
+      "role": "menu",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 43,
+      "x": 750,
+      "y": 353
+    },
+    {
+      "actions": [
+        "click"
+      ],
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "About",
+      "ref": "2/0/0/0/3/1",
+      "role": "menu item",
+      "state": [
+        "enabled",
+        "visible"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "Empty",
+      "ref": "2/0/0/0/3/2",
+      "role": "menu item",
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "center_x": -2,
+      "center_y": -2,
+      "height": -1,
+      "name": "",
+      "ref": "2/0/0/1/0",
+      "role": "page tab",
+      "state": [
+        "selected",
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": -1,
+      "x": -1,
+      "y": -1
+    }
+  ]
+}
+
+Qué hizo:
+  Leyó el escritorio por AT-SPI como roles, nombres, estados y coordenadas —
+  estructura en vez de píxeles — filtrado a la parte accionable.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  El instrumento correcto, y el motivo por el que read_screen_text saca un dos. Lo que
+  la deja lejos del cinco es el costo: cada llamada ui_* levanta python3 e importa
+  pyatspi, o sea unos cientos de milisegundos de proceso antes de que empiece el
+  trabajo. a11y.py debería ser un demonio chico sosteniendo una sola conexión AT-SPI,
+  como ya lo es el socket MCP.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #66   [ok]
+ui_find: Encontrar elementos por rol, nombre o texto
+Argumentos enviados: {"limit": 20}
+Result: {
+  "count": 20,
+  "elements": [
+    {
+      "name": "lxpanel",
+      "ref": "0",
+      "role": "application"
+    },
+    {
+      "center_x": 960,
+      "center_y": 18,
+      "height": 36,
+      "name": "panel",
+      "ref": "0/0",
+      "role": "frame",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 1920,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "center_x": 960,
+      "center_y": 18,
+      "height": 36,
+      "name": "",
+      "ref": "0/0/0",
+      "role": "filler",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 1920,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "center_x": 2,
+      "center_y": 18,
+      "height": 36,
+      "name": "",
+      "ref": "0/0/0/0",
+      "role": "panel",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 4,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "center_x": 18,
+      "center_y": 18,
+      "height": 36,
+      "name": "",
+      "ref": "0/0/0/1",
+      "role": "panel",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 28,
+      "x": 4,
+      "y": 0
+    },
+    {
+      "center_x": 18,
+      "center_y": 18,
+      "height": 36,
+      "name": "",
+      "ref": "0/0/0/1/0",
+      "role": "panel",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 28,
+      "x": 4,
+      "y": 0
+    },
+    {
+      "center_x": 18,
+      "center_y": 18,
+      "height": 36,
+      "name": "",
+      "ref": "0/0/0/1/0/0",
+      "role": "icon",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 28,
+      "x": 4,
+      "y": 0
+    },
+    {
+      "center_x": 35,
+      "center_y": 18,
+      "height": 36,
+      "name": "",
+      "ref": "0/0/0/2",
+      "role": "panel",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 6,
+      "x": 32,
+      "y": 0
+    },
+    {
+      "center_x": 84,
+      "center_y": 18,
+      "height": 36,
+      "name": "",
+      "ref": "0/0/0/3",
+      "role": "filler",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 93,
+      "x": 38,
+      "y": 0
+    },
+    {
+      "center_x": 84,
+      "center_y": 18,
+      "height": 36,
+      "name": "",
+      "ref": "0/0/0/3/0",
+      "role": "panel",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 93,
+      "x": 38,
+      "y": 0
+    },
+    {
+      "center_x": 53,
+      "center_y": 18,
+      "description": "Chromium Web Browser",
+      "height": 28,
+      "name": "",
+      "ref": "0/0/0/3/0/0",
+      "role": "panel",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 28,
+      "x": 39,
+      "y": 4
+    },
+    {
+      "center_x": 53,
+      "center_y": 18,
+      "height": 28,
+      "name": "",
+      "ref": "0/0/0/3/0/0/0",
+      "role": "icon",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 28,
+      "x": 39,
+      "y": 4
+    },
+    {
+      "center_x": 84,
+      "center_y": 18,
+      "description": "PCMan File Manager",
+      "height": 28,
+      "name": "",
+      "ref": "0/0/0/3/0/1",
+      "role": "panel",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 28,
+      "x": 70,
+      "y": 4
+    },
+    {
+      "center_x": 84,
+      "center_y": 18,
+      "height": 28,
+      "name": "",
+      "ref": "0/0/0/3/0/1/0",
+      "role": "icon",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 28,
+      "x": 70,
+      "y": 4
+    },
+    {
+      "center_x": 115,
+      "center_y": 18,
+      "description": "LXTerminal",
+      "height": 28,
+      "name": "",
+      "ref": "0/0/0/3/0/2",
+      "role": "panel",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 28,
+      "x": 101,
+      "y": 4
+    },
+    {
+      "center_x": 115,
+      "center_y": 18,
+      "height": 28,
+      "name": "",
+      "ref": "0/0/0/3/0/2/0",
+      "role": "icon",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 28,
+      "x": 101,
+      "y": 4
+    },
+    {
+      "center_x": 135,
+      "center_y": 18,
+      "height": 36,
+      "name": "",
+      "ref": "0/0/0/4",
+      "role": "panel",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 8,
+      "x": 131,
+      "y": 0
+    },
+    {
+      "center_x": 981,
+      "center_y": 18,
+      "height": 36,
+      "name": "",
+      "ref": "0/0/0/5",
+      "role": "filler",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 1685,
+      "x": 139,
+      "y": 0
+    },
+    {
+      "center_x": -2147483648,
+      "center_y": -2147483648,
+      "height": 1,
+      "name": "",
+      "ref": "0/0/0/5/0",
+      "role": "panel",
+      "state": [
+        "enabled"
+      ],
+      "width": 1,
+      "x": -2147483648,
+      "y": -2147483648
+    },
+    {
+      "center_x": 981,
+      "center_y": 18,
+      "height": 36,
+      "name": "",
+      "ref": "0/0/0/5/1",
+      "role": "panel",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 1685,
+      "x": 139,
+      "y": 0
+    }
+  ]
+}
+
+Qué hizo:
+  Buscó por rol, nombre o texto y devolvió cada coincidencia con su ref, sus acciones,
+  sus estados y coordenadas de pantalla.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Devolver coordenadas junto al ref es lo que permite caer a un clic cuando falta una
+  acción, y eso es buen diseño. También debería decir qué interfaces AT-SPI implementa
+  cada elemento: este barrido encontró a Chromium reportando un campo como `editable`
+  sin implementar EditableText, así que ui_set_text falló sobre algo que parecía
+  escribible. Eso se puede saber antes de llamar, y sólo esta herramienta puede
+  decirlo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #67   [ok]
+ui_find: Encontrar los campos editables, para escribir en uno por ref
+Argumentos enviados: {"limit": 5, "role": "entry"}
+Result: {
+  "count": 2,
+  "elements": [
+    {
+      "actions": [
+        "activate",
+        "showContextMenu"
+      ],
+      "center_x": 1006,
+      "center_y": 99,
+      "height": 24,
+      "name": "Address and search bar",
+      "ref": "3/0/0/0/5/1/0/5/2",
+      "role": "entry",
+      "state": [
+        "enabled",
+        "visible",
+        "showing",
+        "editable"
+      ],
+      "text": "/tmp/sweep.html",
+      "width": 1569,
+      "x": 222,
+      "y": 87
+    },
+    {
+      "actions": [
+        "activate",
+        "showContextMenu"
+      ],
+      "center_x": 111,
+      "center_y": 297,
+      "height": 25,
+      "name": "",
+      "ref": "3/0/0/0/5/2/0/1/3/1",
+      "role": "entry",
+      "state": [
+        "enabled",
+        "visible",
+        "showing",
+        "editable"
+      ],
+      "text": "sweep",
+      "width": 206,
+      "x": 8,
+      "y": 285
+    }
+  ]
+}
+
+Qué hizo:
+  Buscó por rol, nombre o texto y devolvió cada coincidencia con su ref, sus acciones,
+  sus estados y coordenadas de pantalla.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Devolver coordenadas junto al ref es lo que permite caer a un clic cuando falta una
+  acción, y eso es buen diseño. También debería decir qué interfaces AT-SPI implementa
+  cada elemento: este barrido encontró a Chromium reportando un campo como `editable`
+  sin implementar EditableText, así que ui_set_text falló sobre algo que parecía
+  escribible. Eso se puede saber antes de llamar, y sólo esta herramienta puede
+  decirlo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #68   [ok]
+ui_wait_for: Esperar a que exista un elemento que coincida
+Argumentos enviados: {"role": "frame", "timeout_ms": 6000}
+Result: {
+  "elements": [
+    {
+      "center_x": 960,
+      "center_y": 18,
+      "height": 36,
+      "name": "panel",
+      "ref": "0/0",
+      "role": "frame",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 1920,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "center_x": 960,
+      "center_y": 540,
+      "height": 1080,
+      "name": "",
+      "ref": "1/0",
+      "role": "frame",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 1920,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "center_x": 960,
+      "center_y": 557,
+      "height": 465,
+      "name": "sentineldesk@60c97d694cc8: /",
+      "ref": "2/0",
+      "role": "frame",
+      "state": [
+        "enabled",
+        "visible",
+        "showing"
+      ],
+      "width": 658,
+      "x": 631,
+      "y": 325
+    }
+  ],
+  "found": true,
+  "via": "already present",
+  "waited_ms": 0
+}
+
+Qué hizo:
+  Se registró a los eventos de AT-SPI que pueden hacer aparecer un elemento y buscó
+  cuando alguno se disparó, agrupando las ráfagas.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Antes recorría el árbol de accesibilidad de cada aplicación abierta cuatro veces por
+  segundo y filtraba el resultado. Cada nodo de ese recorrido es un viaje por D-Bus, y
+  con una página real abierta una travesía son 289 nodos y 0.22s — así que el bucle ni
+  siquiera podía sostener su propia cadencia: 250ms de sueño más 220ms de recorrido
+  significaban que una espera de quince segundos gastaba cerca de un tercio de núcleo
+  preguntando unas treinta veces si algo había cambiado. Escuchar cuesta una búsqueda
+  al principio y después nada; el daemon del registro anota los mismos cero jiffies
+  durante una espera de diez segundos que estando quieto. Las ráfagas se agrupan en
+  vez de descartarse, porque una aplicación dibujándose emite cientos de
+  children-changed en pocos milisegundos y el último es el que más probablemente
+  importa. Lo que la mejoraría ahora es acotar la búsqueda al subárbol del propio
+  evento: el elemento que apareció casi siempre está debajo del nodo que lo anunció,
+  así que la travesía completa en cada despertar sigue siendo más de lo que la
+  pregunta necesita.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #69   [ok]
+ui_diff: Sólo lo que cambió en el árbol desde la última llamada
+Argumentos enviados: {"reset": true}
+Result: {
+  "baseline": true,
+  "nodes": 361,
+  "note": "first call: the reference snapshot was stored; the next one returns only the changes"
+}
+
+Qué hizo:
+  Devolvió sólo lo que cambió en el árbol desde la última llamada, guardando la
+  instantánea previa del lado del servidor.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  La mejor respuesta del catálogo al problema que realmente limita a un agente: el
+  contexto. Un ui_tree completo después de cada acción es la mayor parte del
+  presupuesto de un modelo gastada en releer lo que ya sabía. Guardar la instantánea
+  de este lado es lo que lo hace posible. Nada que cambiar.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #70   [ok]
+ui_get_text: Leer el texto de un elemento por ref, sin OCR
+Argumentos enviados: {"ref": "0"}
+Result: {
+  "name": "lxpanel",
+  "ref": "0",
+  "role": "application",
+  "text": ""
+}
+
+Qué hizo:
+  Leyó el texto de un elemento por ref, directo de la interfaz de accesibilidad.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Exacto donde el OCR es probable, y barato donde una captura no lo es. Mismo costo de
+  Python por llamada que el resto de la familia.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #71   [ok]
+ui_focus: Darle el foco del teclado a un campo editable
+Argumentos enviados: {"ref": "3/0/0/0/5/1/0/5/2"}
+Result: {
+  "ok": true,
+  "ref": "3/0/0/0/5/1/0/5/2"
+}
+
+Qué hizo:
+  Le dio el foco del teclado a un elemento por ref.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  El complemento correcto de type_text — enfocar por estructura y después escribir — y
+  evita el baile de clickear para enfocar que mueve el puntero a un lugar que el
+  usuario no esperaba. Mismo costo de subproceso.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #72   [degradado — lo explica el entorno]
+ui_set_text: Escribir directo en un campo por ref, sin tipear
+Argumentos enviados: {"ref": "3/0/0/0/5/1/0/5/2", "text": "sentineldesk-sweep"}
+Result: the element is not editable
+
+    nota: Chromium expone el campo como editable pero no implementa EditableText de AT-SPI sobre él — dentro de una página va browser_type
+
+Qué hizo:
+  Escribió texto en un campo por ref a través de AT-SPI, sin depender de qué ventana
+  tiene el foco.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  La interfaz correcta, y mejor que tipear cuando funciona. Lo que no puede hacer es
+  avisarte de antemano que no va a funcionar: Chromium expone sus campos como
+  editables y no implementa EditableText, así que esta rechaza correctamente y quien
+  llama se entera recién al intentar. Publicar la lista de interfaces en ui_find lo
+  arregla allá y no acá. Dentro de una página, la respuesta es browser_type.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #73   [ok]
+ui_click: Invocar la acción de un elemento directamente, sin usar el puntero
+Argumentos enviados: {"ref": "3/0/0/0/5/1/0/5/2"}
+Result: {
+  "action": "activate",
+  "ok": true,
+  "ref": "3/0/0/0/5/1/0/5/2"
+}
+
+Qué hizo:
+  Invocó la acción propia de un elemento por ref. El puntero no se mueve, así que no
+  puede errarle, y no importa si la ventana está parcialmente tapada.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Este es el mejor enfoque para hacer clic que hay en el catálogo — mouse_click sobre
+  coordenadas es una adivinanza al lado — y por eso mismo. Sólo el subproceso por
+  llamada lo separa del cinco. También podría reportar qué acción invocó cuando un
+  elemento tiene varias, porque 'la primera' es una decisión que hoy quien llama no
+  puede ver.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Audio
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #74   [ok]   [efecto verificado fuera de MCP]
+set_volume: Fijar el volumen, o silenciar
+Argumentos enviados: {"percent": 60}
+Result: volume 60%
+
+Qué hizo:
+  Fijó el volumen o el silencio con pactl.
+
+Puntaje del método: 3/5  ●●●○○
+
+Cómo llevarla más lejos:
+  Hace shell-out por llamada para algo que PulseAudio expone por su propio socket.
+  Además fija el sink del que graba el escritorio, así que cambia lo que captura una
+  grabación y no sólo lo que escucha alguien — vale decirlo en la descripción, porque
+  son intenciones distintas.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #75   [ok]
+get_audio_state: Leer de vuelta el volumen y el estado de silencio
+Argumentos enviados: ninguno
+Result: {
+  "mute": false,
+  "sink": "sentineldesk",
+  "volume": "Volume: front-left: 39321 /  60% / -13.31 dB,   front-right: 39321 /  60% / -13.31 dB"
+}
+
+Qué hizo:
+  Le preguntó a PulseAudio por el sink, el volumen y el estado de silencio.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Reporta el sink del que graba el escritorio y no lo que hace el stream de cada
+  aplicación, así que un agente no puede saber qué programa está haciendo ruido.
+  Listar los sink inputs contestaría eso.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Grabación y retransmisión
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #76   [ok]   [efecto verificado fuera de MCP]
+start_recording: Grabar la pantalla a un archivo en paralelo al stream en vivo
+Argumentos enviados: {"audio": false, "container": "mp4", "fps": 15}
+Result: recording to /home/sentineldesk/Recordings/rec-20260807-074737.mp4
+
+Qué hizo:
+  Arrancó una grabación lanzando gst-launch-1.0 en su propio grupo de procesos,
+  capturando y codificando la pantalla una segunda vez en paralelo al stream en vivo.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  El segundo encode es una decisión deliberada, no desperdicio, y medirlo lo confirma.
+  Leer el framebuffer dos veces cuesta 1% de un núcleo: la captura es casi gratis y el
+  codificador es toda la cuenta. Hacer tee del H.264 en vivo como hace start_restream
+  dejaría la grabación casi gratis, pero heredaría el espaciado de keyframes del
+  stream (10s, contra los 2s que quiere un archivo para poder buscar) y su bitrate,
+  que el estimador de congestión ata a la peor red de los espectadores. Un archivo
+  cuya calidad depende de quién estaba mirando es el default equivocado; corresponde
+  detrás de una opción explícita para quien prefiera la CPU. Lo que sí estaba mal era
+  todo aquello sobre lo que nadie había expresado una preferencia. ximagesrc entrega
+  BGRx y x264enc acepta Y444 igual que I420, así que videoconvert elegía la conversión
+  más barata para él y cada grabación salía en High 4:4:4 Predictive: el doble de
+  croma para codificar, en un perfil que casi ningún decodificador por hardware
+  acepta, de modo que el archivo se reproducía por software o directamente no se
+  reproducía en los dispositivos más propensos a abrirlo. La cantidad de hilos tenía
+  la misma forma: el default de x264enc se deduce de los núcleos del host y está
+  dimensionado para terminar cada cuadro rápido, cosa que a un archivo en disco no le
+  sirve. Juntas, en un host de 20 núcleos grabando una terminal con texto en
+  movimiento, costaban 281% de un núcleo contra 98% con el formato fijado en I420 y
+  los hilos en 2 — los mismos cuadros a la salida, y ahora un archivo que se reproduce
+  en cualquier lado. Queda el hijo gst-launch: GStreamer corre in-process en todos
+  lados menos acá, y un proceso hijo significa sin bus, así que un pipeline que falla
+  a mitad de la grabación es indistinguible de uno que anda.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #77   [ok]
+get_recording_status: Si hay una grabación corriendo, y cuánto pesa
+Argumentos enviados: ninguno
+Result: {
+  "container": "mp4",
+  "path": "/home/sentineldesk/Recordings/rec-20260807-074737.mp4",
+  "recording": true,
+  "seconds": 0,
+  "size_bytes": 0
+}
+
+Qué hizo:
+  Reportó si hay una grabación corriendo con segundos transcurridos, tamaño actual y
+  ruta.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  El tamaño en disco es un buen proxy de 'realmente está escribiendo', que un booleano
+  no daría. No puede decir si se están perdiendo cuadros, y una grabación que corre
+  pero se está quedando sin datos es indistinguible de una sana hasta que la
+  reproducís.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #78   [ok]
+wait: Dejar que la grabación junte un segundo de video
+Argumentos enviados: {"ms": 1200}
+Result: waited 1200 ms
+
+Qué hizo:
+  Durmió, y desde la etapa 1 corta cuando se cancela la llamada en vez de dormir a
+  través de la cancelación.
+
+Puntaje del método: 3/5  ●●●○○
+
+Cómo llevarla más lejos:
+  Es la herramienta a la que recurre un modelo cuando no sabe qué está esperando, y
+  una duración adivinada es o muy corta o desperdiciada. Cada uso que pueda nombrar
+  una condición debería ser ui_wait_for, wait_for_window o wait_for_idle. Su
+  descripción debería decirlo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #79   [ok]   [efecto verificado fuera de MCP]
+stop_recording: Parar y cerrar el archivo correctamente
+Argumentos enviados: ninguno
+Result: {
+  "path": "/home/sentineldesk/Recordings/rec-20260807-074737.mp4",
+  "size_bytes": 66027
+}
+
+Qué hizo:
+  Señalizó el grupo de procesos del pipeline para que el contenedor se cierre
+  correctamente, y reportó ruta y tamaño.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Parar limpio en vez de matar es lo que hace que el mp4 sea reproducible, y ese
+  detalle es fácil de errar. Por poco lo erraba: la espera a que drene el hijo
+  sondeaba cmd.ProcessState mientras la goroutine que lo cosecha lo escribía, o sea
+  las dos compitiendo, y perder esa carrera significaba que Stop no viera una salida
+  que ya había ocurrido y matara a gst en medio de escribir el índice — produciendo
+  justo el archivo irreproducible que el SIGINT existe para evitar. Ahora espera en un
+  canal que cierra el cosechador. Queda que la espera exista: nada acá puede
+  distinguir un pipeline que todavía está vaciando de uno colgado, porque un hijo
+  gst-launch no ofrece un bus al que preguntarle.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #80   [ok]
+list_recordings: Las grabaciones que hay en disco
+Argumentos enviados: ninguno
+Result: [
+  {
+    "modified": "2026-08-06T22:09:15-03:00",
+    "path": "/home/sentineldesk/Recordings/rec-20260806-220914.mp4",
+    "size_bytes": 63593
+  },
+  {
+    "modified": "2026-08-07T06:57:03-03:00",
+    "path": "/home/sentineldesk/Recordings/rec-20260807-065702.mp4",
+    "size_bytes": 61922
+  },
+  {
+    "modified": "2026-08-07T06:58:35-03:00",
+    "path": "/home/sentineldesk/Recordings/rec-20260807-065834.mp4",
+    "size_bytes": 66591
+  },
+  {
+    "modified": "2026-08-07T07:00:53-03:00",
+    "path": "/home/sentineldesk/Recordings/rec-20260807-070051.mp4",
+    "size_bytes": 70279
+  },
+  {
+    "modified": "2026-08-07T07:02:29-03:00",
+    "path": "/home/sentineldesk/Recordings/rec-20260807-070228.mp4",
+    "size_bytes": 75005
+  },
+  {
+    "modified": "2026-08-07T07:12:28-03:00",
+    "path": "/home/sentineldesk/Recordings/rec-20260807-071226.mp4",
+    "size_bytes": 59994
+  },
+  {
+    "modified": "2026-08-07T07:14:24-03:00",
+    "path": "/home/sentineldesk/Recordings/rec-20260807-071422.mp4",
+    "size_bytes": 64522
+  },
+  {
+    "modified": "2026-08-07T07:29:28-03:00",
+    "path": "/home/sentineldesk/Recordings/rec-20260807-072927.mp4",
+    "size_bytes": 62795
+  },
+  {
+    "modified": "2026-08-07T07:34:50-03:00",
+    "path": "/home/sentineldesk/Recordings/rec-20260807-073449.mp4",
+    "size_bytes": 66997
+  },
+  {
+    "modified": "2026-08-07T07:45:56-03:00",
+    "path": "/home/sentineldesk/Recordings/rec-20260807-074554.mp4",
+    "size_bytes": 63171
+  },
+  {
+    "modified": "2026-08-07T07:47:38-03:00",
+    "path": "/home/sentineldesk/Recordings/rec-20260807-074737.mp4",
+    "size_bytes": 66027
+  }
+]
+
+Qué hizo:
+  Listó los archivos terminados con tamaño y fecha de modificación.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  La forma correcta. Reporta lo que hay en disco y no lo que es reproducible — un
+  archivo que dejó una grabación que nunca paró limpio se ve igual que uno bueno.
+  Sondear la duración del contenedor los separaría.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #81   [ok]
+start_restream: Mandar el encode en vivo a un destino externo
+Argumentos enviados: {"platform": "udp", "url": "udp://127.0.0.1:9999"}
+Result: streaming to udp (udp://•••, audio=true) — reusing the live encode, no second capture
+
+Qué hizo:
+  Enganchó un destino externo a la salida H.264 viva por el tee del pipeline, sin
+  codificar nada por segunda vez.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Este es el ejemplo que debería seguir el resto del camino de medios. Un segundo
+  espectador cuesta ancho de banda, no CPU, y un segundo destino tampoco. Además está
+  correctamente gateada por la sala: publicar lo que está en la pantalla de todos
+  hacia afuera no es una decisión que un agente tome solo. start_recording es la
+  herramienta que debería estar leyendo el fuente de ésta.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #82   [ok]
+list_restreams: Dónde se está publicando el escritorio ahora
+Argumentos enviados: ninguno
+Result: udp → udp://127.0.0.1:9999 (audio=true, 0s)
+
+Qué hizo:
+  Reportó dónde se está publicando el escritorio ahora.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  La respuesta de auditoría a una pregunta que importa — esta es la herramienta que
+  dice si la pantalla está saliendo de la sala. Reporta los destinos pero no cómo van,
+  así que un push trabado se ve igual que uno sano.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #83   [ok]
+stop_restream: Dejar de publicar
+Argumentos enviados: ninguno
+Result: stopped 1 destination(s)
+
+Qué hizo:
+  Desenganchó un destino del tee.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Remoción limpia sin perturbar el encode vivo, que es lo que compra el tee. Parar por
+  id cuando hay varios corriendo es lo correcto; pararlos todos requiere un loop que
+  tiene que escribir quien llama.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Joystick
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #84   [ok]
+gamepad_button: Apretar o soltar un botón por índice W3C
+Argumentos enviados: {"down": true, "index": 0}
+Result: button 0 down
+
+Qué hizo:
+  Apretó o soltó un botón en un dispositivo uinput real.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Un dispositivo virtual en el kernel, no eventos X sintéticos: la aplicación lo lee
+  por evdev exactamente como leería un control enchufado, y no puede notar la
+  diferencia. Es la respuesta más fuerte posible acá, y el motivo por el que toda la
+  familia funciona en juegos que ignoran input falso.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #85   [ok]
+gamepad_tap: Apretar y soltar un botón
+Argumentos enviados: {"hold_ms": 40, "index": 0}
+Result: tapped button 0
+
+Qué hizo:
+  Apretó y soltó con una espera en el medio.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  La comodidad que evita que quien llama tenga que cronometrar dos llamadas a través
+  del cable, que es donde un toque se convierte en un mantenido. Bloquea mientras
+  dura, así que un hold largo ocupa la llamada; ese es el canje honesto por precisión.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #86   [ok]
+gamepad_axis: Mover un eje del stick
+Argumentos enviados: {"axis": 0, "value": 0.5}
+Result: axis 0 = 0.50
+
+Qué hizo:
+  Movió un eje del stick por el mismo dispositivo uinput.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Valores absolutos de eje sobre un dispositivo real. No existe nada mejor salvo un
+  control físico.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #87   [ok]
+gamepad_state: Fijar todos los botones y ejes en una sola llamada
+Argumentos enviados: {"axes": [0, 0, 0, 0], "buttons": [0, 0, 0, 0]}
+Result: gamepad state applied
+
+Qué hizo:
+  Fijó todos los botones y ejes en una sola llamada.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  La forma correcta para un loop de juego: una llamada por cuadro en vez de una
+  docena, y una foto consistente en vez de una carrera entre eventos sueltos.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Shells persistentes
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #88   [ok]
+shell_open: Abrir una sesión de shell que sobrevive entre llamadas
+Argumentos enviados: {"shell": "/bin/bash"}
+Result: {
+  "id": "sh2",
+  "shell": "/bin/bash",
+  "user": ""
+}
+
+Qué hizo:
+  Arrancó una shell sobre un PTY real, dimensionado en filas y columnas.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Un pseudo-terminal en vez de un pipe, que es la diferencia entre una shell que se
+  comporta y una que apaga su prompt, sus colores y su edición de línea porque cree
+  que nadie la mira. Los programas interactivos funcionan acá por el mismo motivo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #89   [ok]   [efecto verificado fuera de MCP]
+shell_exec: Correr un comando en esa sesión y esperarlo
+Argumentos enviados: {"command": "echo sweep-shell-ok > /tmp/sweep-shell.txt", "id": "sh2", "timeout_ms": 10000}
+Result: {
+  "completed": true,
+  "output": ""
+}
+
+Qué hizo:
+  Corrió un comando en una sesión abierta y esperó a que la salida se aquietara.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Un período de silencio es la forma honesta de saber que una shell interactiva
+  terminó cuando no hay código de salida que leer — y sigue siendo una heurística, así
+  que un comando que hace una pausa a mitad de salida parece terminado. Hacer eco de
+  un centinela con $? convertiría la adivinanza en un hecho, el mismo arreglo que
+  necesita terminal_run.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #90   [ok]
+shell_input: Mandar teclas crudas, sin esperar
+Argumentos enviados: {"enter": true, "id": "sh2", "text": "echo second > /tmp/sweep-input.txt"}
+Result: sent 35 bytes
+
+Qué hizo:
+  Mandó teclas crudas a una sesión sin esperar.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Necesaria para todo lo que shell_exec no puede expresar — contestar un prompt,
+  mandar Ctrl-C, manejar un programa de pantalla completa. Disparar y olvidarse es el
+  punto, y significa que quien llama tiene que emparejarla con shell_read por su
+  cuenta.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #91   [ok]
+wait: Darle un momento a la shell para que produzca salida
+Argumentos enviados: {"ms": 400}
+Result: waited 400 ms
+
+Qué hizo:
+  Durmió, y desde la etapa 1 corta cuando se cancela la llamada en vez de dormir a
+  través de la cancelación.
+
+Puntaje del método: 3/5  ●●●○○
+
+Cómo llevarla más lejos:
+  Es la herramienta a la que recurre un modelo cuando no sabe qué está esperando, y
+  una duración adivinada es o muy corta o desperdiciada. Cada uso que pueda nombrar
+  una condición debería ser ui_wait_for, wait_for_window o wait_for_idle. Su
+  descripción debería decirlo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #92   [ok]
+shell_read: Leer y limpiar lo que produjo la sesión
+Argumentos enviados: {"id": "sh2"}
+Result: echo second > /tmp/sweep-input.txt
+sentineldesk@60c97d694cc8:/$
+
+Qué hizo:
+  Leyó y limpió todo lo que produjo la sesión desde la última lectura.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Leer-y-limpiar es el contrato correcto para hacer polling de un comando largo: nada
+  se entrega dos veces. También significa que la lectura de uno esconde esa salida de
+  otro, lo que importa ahora que varios sub-agentes pueden compartir un escritorio.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #93   [ok]
+shell_list: Las sesiones de shell abiertas
+Argumentos enviados: ninguno
+Result: [
+  {
+    "alive": true,
+    "id": "sh2",
+    "pending": 0,
+    "seconds": 1,
+    "user": ""
+  }
+]
+
+Qué hizo:
+  Listó las sesiones abiertas con su antigüedad y bytes pendientes.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Reportar bytes pendientes es lo que la hace útil y no decorativa — una sesión con
+  salida sin leer es una que alguien debería leer. No puede decir qué está corriendo
+  en cada una.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #94   [ok]   [efecto verificado fuera de MCP]
+shell_close: Terminar la sesión
+Argumentos enviados: {"id": "sh2"}
+Result: session closed
+
+Qué hizo:
+  Terminó una sesión y liberó su PTY.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Limpieza explícita, que importa porque un PTY y un proceso de shell sobreviven a la
+  conexión MCP que los creó. Las sesiones no tienen timeout por inactividad, así que
+  una olvidada vive hasta que el escritorio reinicie.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Paquetes y servicios
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #95   [ok]
+run_command: Correr un comando de shell y devolver stdout, stderr y código de salida
+Argumentos enviados: {"command": "echo sweep-run-ok && uname -s", "timeout_ms": 10000}
+Result: {
+  "as_root": false,
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "sweep-run-ok\nLinux\n",
+  "timed_out": false
+}
+
+Qué hizo:
+  Corrió un comando por sh -c con deadline, capturando stdout, stderr y el código de
+  salida, matando el proceso cuando se cancela la llamada y reportando su salida como
+  progreso mientras corre.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Todo lo que una herramienta de shell debería ser: un deadline real, un kill real, y
+  la salida en streaming en vez de retenida hasta el final. Es la herramienta más
+  peligrosa del catálogo y está clasificada como tal. Lo único que falta es una forma
+  argv al lado de la de string, para poder pasar un nombre de archivo con espacios sin
+  pensar en comillas.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #96   [ok]
+sudo_status: Si esta imagen tiene sudo sin contraseña
+Argumentos enviados: ninguno
+Result: {
+  "groups": [
+    "sentineldesk",
+    "sudo",
+    "video"
+  ],
+  "hint": "as_root:true en run_command / launch_app / write_file / read_file, or shell_open with user:\"root\" for a persistent root terminal",
+  "pkexec": true,
+  "su_root": true,
+  "sudo_nopasswd": true,
+  "sudo_resolves_to": "root",
+  "user": "sentineldesk"
+}
+
+Qué hizo:
+  Reportó si esta imagen tiene sudo sin contraseña.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Lo correcto para preguntar antes de ofrecerle a un agente un camino privilegiado, y
+  barato. Contesta sobre la capacidad y no sobre un comando puntual, así que un
+  sudoers restringido se ve igual que uno completo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #97   [ok]
+search_packages: Buscar en apt sin instalar nada
+Argumentos enviados: {"limit": 3, "query": "openssh-server"}
+Result: {
+  "count": 2,
+  "query": "openssh-server",
+  "results": [
+    {
+      "description": "secure shell (SSH) server, for secure access from remote machines",
+      "installed": "1:10.0p1-7+deb13u4",
+      "package": "openssh-server"
+    },
+    {
+      "description": "secure shell (SSH) server, with GSS-API key exchange",
+      "installed": "",
+      "package": "openssh-server-gssapi"
+    }
+  ]
+}
+
+Qué hizo:
+  Buscó en apt sin instalar nada.
+
+Puntaje del método: 3/5  ●●●○○
+
+Cómo llevarla más lejos:
+  Correctamente de sólo lectura, que es por lo que sobrevive a MCP_POLICY=readonly.
+  Parsea la salida de apt pensada para personas, y apt dice explícitamente que su CLI
+  no tiene una interfaz estable entre versiones. python-apt o la base de dpkg no se
+  moverían debajo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #98   [ok]
+service_control: Preguntarle a supervisord por los servicios del escritorio
+Argumentos enviados: {"action": "status"}
+Result: {
+  "action": "status",
+  "as_root": true,
+  "exit_code": 3,
+  "service": "all",
+  "stderr": "",
+  "stdout": "at-spi                           RUNNING   pid 41, uptime 0:03:34\ndbus-session                     RUNNING   pid 39, uptime 0:03:34\ndesktop-init                     EXITED    Aug 07 07:44 AM\nlxpanel                          RUNNING   pid 47, uptime 0:03:34\nopenbox                          RUNNING   pid 42, uptime 0:03:34\npcmanfm-desktop                  RUNNING   pid 44, uptime 0:03:34\npulseaudio                       RUNNING   pid 40, uptime 0:03:34\nsentineldesk                     RUNNING   pid 51, uptime 0:03:34\nwallpaper-rotate                 EXITED    Aug 07 07:46 AM\nxvfb                             RUNNING   pid 38, uptime 0:03:34\n"
+}
+
+Qué hizo:
+  Le preguntó a supervisord por los programas del escritorio, y puede arrancarlos,
+  pararlos o reiniciarlos.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Hablar con el supervisor que realmente es dueño de esos procesos es lo correcto, y
+  reconoce tanto la configuración del contenedor como la nativa. Parar el programa
+  equivocado le saca el escritorio a todos, y la herramienta no distingue los que se
+  pueden rebotar sin riesgo de los que no.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #99   [ok]   [efecto verificado fuera de MCP]
+install_packages: Instalar un paquete con apt, reportando progreso
+Argumentos enviados: {"packages": ["openssh-server"], "timeout_ms": 300000, "update": true}
+Result: {
+  "as_root": true,
+  "exit_code": 0,
+  "installed": {
+    "openssh-server": "1:10.0p1-7+deb13u4"
+  },
+  "log": "Reading package lists...\nBuilding dependency tree...\nReading state information...\nSuggested packages:\n  molly-guard monkeysphere ssh-askpass ufw\nRecommended packages:\n  ncurses-term xauth\nThe following NEW packages will be installed:\n  openssh-server\n0 upgraded, 1 newly installed, 0 to remove and 2 not upgraded.\nNeed to get 602 kB of archives.\nAfter this operation, 3511 kB of additional disk space will be used.\nGet:1 http://deb.debian.org/debian trixie/main amd64 openssh-server amd64 1:10.0p1-7+deb13u4 [602 kB]\nPreconfiguring packages ...\nFetched 602 kB in 0s (14.5 MB/s)\nSelecting previously unselected package openssh-server.\r\n(Reading database ... \r(Reading database ... 5%\r(Reading database ... 10%\r(Reading database ... 15%\r(Reading database ... 20%\r(Reading database ... 25%\r(Reading database ... 30%\r(Reading database ... 35%\r(Reading database ... 40%\r(Reading database ... 45%\r(Reading database ... 50%\r(Reading database ... 55%\r(Reading database ... 60%\r(Reading database ... 65%\r(Reading database ... 70%\r(Reading database ... 75%\r(Reading database ... 80%\r(Reading database ... 85%\r(Reading database ... 90%\r(Reading database ... 95%\r(Reading database ... 100%\r(Reading database ... 142956 files and directories currently installed.)\r\nPreparing to unpack .../openssh-server_1%3a10.0p1-7+deb13u4_amd64.deb ...\r\nUnpacking openssh-server (1:10.0p1-7+deb13u4) ...\r\nSetting up openssh-server (1:10.0p1-7+deb13u4) ...\r\nrunit: ssh: start action denied by policy-rc.d\r\ninvoke-rc.d: could not determine current runlevel\r\ninvoke-rc.d: policy-rc.d denied execution of restart.\r\nProcessing triggers for man-db (2.13.1-1) ...\r",
+  "stderr": ""
+}
+
+Qué hizo:
+  Instaló con apt bajo deadline, reportando la salida del propio comando como progreso
+  y matándolo al cancelar.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Todo lo que debería ser el camino largo, y el progreso que emite es el texto propio
+  de apt y no un spinner. No puede revertir una instalación parcial, para lo cual está
+  snapshot_create — vale decirlo en la descripción, porque las dos van juntas.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== SSH
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #100   [ok]
+ssh_keygen: Generar un par de claves para el usuario del escritorio
+Argumentos enviados: {"comment": "sweep", "path": "/home/sentineldesk/.ssh/sweep", "type": "ed25519"}
+Result: {
+  "note": "the key already existed and was not overwritten",
+  "path": "/home/sentineldesk/.ssh/sweep",
+  "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKwf9KzhQ3h/C7OqnM7E+DzlCTiYAza4grCUn1T/DiW9 sweep"
+}
+
+Qué hizo:
+  Generó un par de claves corriendo ssh-keygen.
+
+Puntaje del método: 3/5  ●●●○○
+
+Cómo llevarla más lejos:
+  crypto/ed25519 y x/crypto/ssh pueden generar y serializar una clave sin salir del
+  proceso, lo que además permitiría negarse a sobrescribir sin parsear un prompt. Ya
+  se niega a sobrescribir una clave existente, que es la parte importante.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #101   [ok]
+ssh_list: Las sesiones SSH abiertas
+Argumentos enviados: ninguno
+Result: null
+
+Qué hizo:
+  Listó las sesiones SSH abiertas.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  El inventario que hace usables a las herramientas basadas en id después de reiniciar
+  el cliente. Como shell_list, no dice nada sobre salud.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #102   [ok]
+ssh_connect: Open an SSH session to a second host at 172.18.0.4
+Argumentos enviados: {"host": "172.18.0.4", "password": "peerpass", "user": "peer"}
+Result: {
+  "host": "172.18.0.4:22",
+  "id": "ssh2",
+  "user": "peer"
+}
+
+Qué hizo:
+  Abrió una sesión con golang.org/x/crypto/ssh — el protocolo en Go, no el comando ssh
+  manejado desde afuera.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Esta es la diferencia entre sostener una conexión y rehacerla en cada llamada, y es
+  el motivo por el que exec, sftp y túneles pueden compartir una sesión. El manejo de
+  host keys es lo que hay que mirar antes de confiar en esto fuera de un contenedor:
+  la comodidad ahí es donde el tooling de SSH suele fallar.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #103   [ok]   [efecto verificado fuera de MCP]
+ssh_exec: Correr un comando en el host remoto
+Argumentos enviados: {"command": "echo sweep-ssh-ok > /tmp/sweep-ssh.txt; hostname", "id": "ssh2", "timeout_sec": 20}
+Result: {
+  "exit_code": 0,
+  "stderr": "",
+  "stdout": "a8950fe75830\n"
+}
+
+Qué hizo:
+  Corrió un comando por la sesión abierta, devolviendo stdout, stderr y código de
+  salida.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Un canal sobre una conexión existente, así que cuesta un round trip y no un
+  handshake, y el código de salida es el del protocolo y no algo parseado de vuelta.
+  Nada que mejorar a este nivel.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #104   [ok]   [efecto verificado fuera de MCP]
+ssh_upload: Mandar un archivo por SFTP
+Argumentos enviados: {"id": "ssh2", "local": "/tmp/sweep.txt", "remote": "/tmp/sweep-up.txt"}
+Result: uploaded 19 bytes to /tmp/sweep-up.txt
+
+Qué hizo:
+  Mandó un archivo por SFTP sobre la misma conexión.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  SFTP por pkg/sftp en vez de shell-out a scp: sin segunda autenticación, sin tener
+  que citar una ruta remota a través de una shell, y errores que nombran la operación.
+  Lee el archivo local a memoria, que está bien para lo que mueve un agente y no para
+  una imagen.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #105   [ok]   [efecto verificado fuera de MCP]
+ssh_download: Traer un archivo por SFTP
+Argumentos enviados: {"id": "ssh2", "local": "/tmp/sweep-down.txt", "remote": "/tmp/sweep-up.txt"}
+Result: downloaded 19 bytes to /tmp/sweep-down.txt
+
+Qué hizo:
+  Trajo un archivo por la misma sesión SFTP.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Mismo razonamiento y misma salvedad de memoria.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #106   [ok]
+ssh_list_remote: Listar un directorio en el host remoto
+Argumentos enviados: {"id": "ssh2", "path": "/tmp"}
+Result: [
+  {
+    "modified": "2026-08-07T07:47:46-03:00",
+    "name": "sweep-ssh.txt",
+    "size": 13,
+    "type": "file"
+  },
+  {
+    "modified": "2026-08-07T07:47:47-03:00",
+    "name": "sweep-up.txt",
+    "size": 19,
+    "type": "file"
+  }
+]
+
+Qué hizo:
+  Listó un directorio remoto por SFTP.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Entradas estructuradas del protocolo en vez de salida de ls parseada, que es justo
+  la trampa que esto evita — la salida de ls es para personas.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #107   [ok]   [efecto verificado fuera de MCP]
+ssh_tunnel_local: Reenviar un puerto local hacia el lado remoto
+Argumentos enviados: {"id": "ssh2", "local_addr": "127.0.0.1:18080", "remote_addr": "127.0.0.1:22"}
+Result: {
+  "spec": "127.0.0.1:18080 → 127.0.0.1:22 (via 172.18.0.4:22)",
+  "tunnel_id": "ssh2-l1"
+}
+
+Qué hizo:
+  Abrió un puerto local cuyo tráfico sale por el lado remoto, después de preguntarle
+  al servidor si va a transportarlo.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Validado contra un host realmente remoto y no contra el escritorio hablándose a sí
+  mismo, que era la única forma de que esto apareciera: un banner leído por el puerto
+  reenviado volvió siendo el del sshd del peer, y cerrar el túnel cerró el listener.
+  Esa corrida encontró además lo que la autoconexión esconde. Un servidor con
+  AllowTcpForwarding no —el default en Alpine entre otros— niega el canal, y la
+  negativa recién llega cuando alguien se conecta, momento en que la herramienta ya
+  devolvió un id de túnel y abrió un puerto. El error del dial se descartaba dentro
+  del bucle de accept, así que quien llamaba tenía un túnel de apariencia sana que
+  tiraba cada conexión sin decir nada. Ahora pregunta una vez antes de abrir nada y
+  rechaza con el motivo del propio servidor, mientras que una conexión meramente
+  rechazada sí crea el túnel: que el servicio todavía no esté arriba es una razón
+  corriente para abrir el forward antes, y ese veredicto puede cambiar; una negativa
+  de política no. Los fallos posteriores quedan y los reporta ssh_tunnels.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #108   [ok]
+ssh_tunnels: Los túneles abiertos en esta sesión
+Argumentos enviados: {"id": "ssh2"}
+Result: [
+  {
+    "connections": 0,
+    "id": "ssh2-l1",
+    "kind": "local",
+    "spec": "127.0.0.1:18080 → 127.0.0.1:22 (via 172.18.0.4:22)"
+  }
+]
+
+Qué hizo:
+  Listó los túneles de una sesión, con su cantidad de conexiones.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  La cantidad de conexiones la convierte en una respuesta operativa y no en un
+  inventario. No puede decir si un túnel está fallando, sólo si algo lo usó.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #109   [ok]
+ssh_tunnel_remote: Reenviar un puerto remoto de vuelta hacia acá
+Argumentos enviados: {"id": "ssh2", "local_addr": "127.0.0.1:8080", "remote_addr": "127.0.0.1:18081"}
+Result: {
+  "spec": "172.18.0.4:22:127.0.0.1:18081 → 127.0.0.1:8080 (reverse)",
+  "tunnel_id": "ssh2-r2"
+}
+
+Qué hizo:
+  Reenvió un puerto remoto de vuelta hacia este lado.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  La dirección más difícil, y funciona igual. Si el sshd remoto lo permite es decisión
+  del servidor, y el error lo dice.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #110   [ok]
+ssh_tunnel_close: Cerrar un túnel por id
+Argumentos enviados: {"id": "ssh2", "tunnel_id": "ssh2-l1"}
+Result: tunnel closed
+
+Qué hizo:
+  Cerró un túnel por id.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  La granularidad correcta — la sesión sobrevive. Las conexiones existentes se cortan
+  sin forma de drenarlas primero, que es el default correcto y vale documentarlo.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #111   [ok]
+ssh_copy_id: Instalar la clave pública en el host remoto
+Argumentos enviados: {"id": "ssh2", "key_path": "/home/sentineldesk/.ssh/sweep.pub"}
+Result: key installed on peer@172.18.0.4:22: installed
+
+Qué hizo:
+  Agregó la clave pública al authorized_keys remoto.
+
+Puntaje del método: 3/5  ●●●○○
+
+Cómo llevarla más lejos:
+  Arma un comando de shell y lo corre remoto, así que depende de que el remoto tenga
+  una shell POSIX y de que el quoting sobreviva. Escribir el archivo por SFTP — leer,
+  agregar, escribir, chmod — usa la conexión que esta herramienta ya sostiene y
+  funciona en hosts con una shell inusual.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #112   [ok]
+ssh_disconnect: Terminar la sesión SSH
+Argumentos enviados: {"id": "ssh2"}
+Result: SSH session closed
+
+Qué hizo:
+  Cerró una sesión y todo lo que colgaba de ella.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Desarme explícito, y que los túneles se vayan con ella es el acoplamiento correcto.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Snapshots
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #113   [ok]   [efecto verificado fuera de MCP]
+snapshot_create: Un punto de restauración: el home más la lista de paquetes instalados
+Argumentos enviados: {"name": "sweep", "note": "created by tool-sweep"}
+Result: {
+  "created": "sweep",
+  "note": "created by tool-sweep",
+  "path": "/home/sentineldesk/.sentineldesk-snapshots/sweep.tar.gz",
+  "size": 65850018
+}
+
+Qué hizo:
+  Empaquetó el home en un tar y registró la lista de paquetes instalados, excluyendo
+  el propio directorio de snapshots para que no se aniden, y rechazando un resultado
+  demasiado chico para ser real.
+
+Puntaje del método: 3/5  ●●●○○
+
+Cómo llevarla más lejos:
+  Los dos chequeos muestran que alguien pensó cómo falla esto: excluirse a sí mismo
+  evita el crecimiento cuadrático, y el chequeo de tamaño atrapa un tar que no
+  empaquetó nada. Pero copia el home entero cada vez — sin incremental, sin
+  deduplicación — así que el segundo snapshot cuesta lo mismo que el primero. Además
+  corre mientras se escriben archivos, así que una base de datos en el home queda
+  capturada a mitad de escritura.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #114   [ok]
+snapshot_list: Los snapshots que hay en disco
+Argumentos enviados: ninguno
+Result: {
+  "dir": "/home/sentineldesk/.sentineldesk-snapshots",
+  "snapshots": [
+    {
+      "created": "2026-08-07T07:47:52-03:00",
+      "name": "sweep",
+      "note": "created by tool-sweep",
+      "size": 65850018
+    }
+  ]
+}
+
+Qué hizo:
+  Listó los snapshots con su tamaño y fecha.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Alcanza para elegir uno. No muestra qué cambiaría una restauración, que es la
+  pregunta que alguien realmente tiene antes de restaurar.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #115   [no ejecutada]
+snapshot_restore: Volver el home al estado de un snapshot
+Argumentos enviados: ninguno
+Result: sobrescribiría el home real; la única herramienta que el barrido no puede hacer segura contra algo creado por él mismo
+
+Qué hizo:
+  Desempaquetó un snapshot sobre el home y reportó qué paquetes se instalaron después
+  de tomarlo.
+
+Puntaje del método: 3/5  ●●●○○
+
+Cómo llevarla más lejos:
+  Reportar la diferencia de paquetes en vez de revertirla en silencio es la parte
+  buena — archivos y paquetes son tipos de estado distintos y no finge lo contrario.
+  Desempaquetar sobre el home vivo deja en su lugar todo lo creado desde entonces, así
+  que una restauración es una fusión y no la vuelta atrás que sugiere el nombre. Decir
+  primero qué archivos va a sobrescribir la convertiría en algo que una persona puede
+  aceptar.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #116   [ok]   [efecto verificado fuera de MCP]
+snapshot_delete: Borrar un snapshot
+Argumentos enviados: {"name": "sweep"}
+Result: {
+  "deleted": "sweep"
+}
+
+Qué hizo:
+  Borró un snapshot y su lista de paquetes.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Saca las dos mitades, que es la falla a evitar — una lista de paquetes sin su tar es
+  peor que nada. Sin confirmación, correctamente: eso le corresponde a quien llama.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Acciones compuestas
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #117   [degradado — lo explica el entorno]
+fill_form: Completar varios campos por nombre accesible y enviar
+Argumentos enviados: {"fields": {"Address and search bar": "sentineldesk-sweep"}, "submit": false}
+Result: {
+  "failed": 1,
+  "fields": [
+    {
+      "error": "a11y settext: exit status 2",
+      "field": "Address and search bar",
+      "ok": false
+    }
+  ],
+  "filled": 0
+}
+
+    nota: misma limitación de AT-SPI que ui_set_text: fill_form escribe por la misma interfaz
+
+Qué hizo:
+  Completó varios campos por nombre accesible y opcionalmente apretó un botón,
+  reportando el éxito campo por campo.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Reportar cada campo por separado en vez de un solo pasa/no pasa es lo correcto — un
+  formulario donde tres de cuatro campos entraron es un problema distinto de uno que
+  no hizo nada. Escribe por la misma interfaz AT-SPI que ui_set_text y hereda su
+  limitación: en Chromium no puede, y tampoco puede avisarlo de antemano.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Sistema
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #118   [ok]   [efecto verificado fuera de MCP]
+set_resolution: Cambiar la resolución sin reiniciar nada
+Argumentos enviados: {"height": 900, "width": 1600}
+Result: {
+  "applied": true,
+  "resolution": "1600x900"
+}
+
+Qué hizo:
+  Cambió el modo con xrandr, dentro del tamaño reservado cuando arrancó el display.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Cambiar la resolución sin reiniciar nada es genuinamente útil, y el techo es honesto
+  — Xvfb reserva su framebuffer al inicio, así que crecer más allá no es algo que esto
+  pudiera arreglar. Reportar los modos disponibles dejaría elegir en vez de adivinar y
+  que te rechacen.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #119   [ok]
+get_screen_info: Confirmar la geometría nueva
+Argumentos enviados: ninguno
+Result: {
+  "desktops": 4,
+  "display": ":0",
+  "height": 900,
+  "width": 1600
+}
+
+Qué hizo:
+  Reportó la geometría y la cantidad de escritorios virtuales directo desde la
+  conexión X.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Ya es la fuente primaria: le pregunta a X, no parsea nada. Sólo mejoraría reportando
+  la geometría por monitor, que este Xvfb de una sola cabeza no tiene forma de tener.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #120   [ok]   [efecto verificado fuera de MCP]
+set_resolution: Volver la resolución a como estaba
+Argumentos enviados: {"height": 1080, "width": 1920}
+Result: {
+  "applied": true,
+  "resolution": "1920x1080"
+}
+
+Qué hizo:
+  Cambió el modo con xrandr, dentro del tamaño reservado cuando arrancó el display.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Cambiar la resolución sin reiniciar nada es genuinamente útil, y el techo es honesto
+  — Xvfb reserva su framebuffer al inicio, así que crecer más allá no es algo que esto
+  pudiera arreglar. Reportar los modos disponibles dejaría elegir en vez de adivinar y
+  que te rechacen.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #121   [ok]
+open_app_and_wait: Lanzar, esperar la ventana y enfocarla, en una sola llamada
+Argumentos enviados: {"command": "xterm -T SWEEPKILL -e sleep 300", "match": "SWEEPKILL", "timeout_ms": 20000}
+Result: {
+  "opened": true,
+  "waited_ms": 1478,
+  "window": {
+    "id": "0x0180000c",
+    "desktop": 0,
+    "x": 2,
+    "y": 92,
+    "w": 484,
+    "h": 316,
+    "class": "xterm.XTerm",
+    "title": "SWEEPKILL"
+  }
+}
+
+Qué hizo:
+  Lanzó un programa, esperó a que apareciera su ventana, la enfocó y esperó a que se
+  asentara el dibujado — las cuatro llamadas que un agente haría, en una sola.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Existe porque launch_app no puede decir si el programa arrancó, y comprimir cuatro
+  round trips en uno vale contexto real. Hereda el polling de wait_for_window, así que
+  arreglar aquello arregla esto.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #122   [ok]   [efecto verificado fuera de MCP]
+kill_process: Matar por nombre un proceso que arrancó el barrido
+Argumentos enviados: {"force": false, "name": "sleep 300"}
+Result: killed processes matching "sleep 300"
+
+Qué hizo:
+  Terminó un proceso por nombre o pid, con force como opción.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Señalizar en vez de usar siempre SIGKILL es el default correcto: un proceso que
+  puede limpiar debería poder hacerlo. Coincidir por nombre tiene el mismo problema de
+  substring que list_processes, así que 'sleep' puede terminar más de lo previsto —
+  devolver qué coincidió antes de actuar lo haría visible.
+----------------------------------------------------------------------------------------
+
+----------------------------------------------------------------------------------------
+tool: #123   [ok]
+remove_packages: Sacar el paquete que instaló el barrido
+Argumentos enviados: {"packages": ["openssh-server"], "purge": false}
+Result: {
+  "as_root": true,
+  "exit_code": 0,
+  "log": "Reading package lists...\nBuilding dependency tree...\nReading state information...\nThe following packages were automatically installed and are no longer required:\n  libtext-charwidth-perl libtext-wrapi18n-perl libwtmpdb0 openssh-sftp-server\n  runit-helper ucf\nUse 'sudo apt autoremove' to remove them.\nThe following packages will be REMOVED:\n  openssh-server\n0 upgraded, 0 newly installed, 1 to remove and 2 not upgraded.\nAfter this operation, 3511 kB disk space will be freed.\n(Reading database ... \r(Reading database ... 5%\r(Reading database ... 10%\r(Reading database ... 15%\r(Reading database ... 20%\r(Reading database ... 25%\r(Reading database ... 30%\r(Reading database ... 35%\r(Reading database ... 40%\r(Reading database ... 45%\r(Reading database ... 50%\r(Reading database ... 55%\r(Reading database ... 60%\r(Reading database ... 65%\r(Reading database ... 70%\r(Reading database ... 75%\r(Reading database ... 80%\r(Reading database ... 85%\r(Reading database ... 90%\r(Reading database ... 95%\r(Reading database ... 100%\r(Reading database ... 142989 files and directories currently installed.)\r\nRemoving openssh-server (1:10.0p1-7+deb13u4) ...\r\ninvoke-rc.d: could not determine current runlevel\r\ninvoke-rc.d: policy-rc.d denied execution of stop.\r\nProcessing triggers for man-db (2.13.1-1) ...\r",
+  "stderr": ""
+}
+
+Qué hizo:
+  Sacó paquetes, con purge como opción.
+
+Puntaje del método: 4/5  ●●●●○
+
+Cómo llevarla más lejos:
+  Purge como elección explícita y no como default es lo correcto: la configuración es
+  la parte que la gente pasa por alto. No reporta qué más sacaría apt como
+  consecuencia, que es el número que importa antes de decir que sí.
+----------------------------------------------------------------------------------------
+
+
+========================================================================================
+== Devolver el control
+========================================================================================
+
+----------------------------------------------------------------------------------------
+tool: #124   [ok]
+release_control: Devolverle el escritorio a quienes están mirando
+Argumentos enviados: ninguno
+Result: control released — the controls are free for whoever claims them next
+
+Qué hizo:
+  Devolvió el escritorio, dejando los controles libres en vez de pasárselos a alguien.
+
+Puntaje del método: 5/5  ●●●●●
+
+Cómo llevarla más lejos:
+  Correcto, incluida la parte que parece una omisión: no transferir significa que
+  'libre' es un estado en el que la sala puede quedarse, y nadie hereda un escritorio
+  que no pidió. Una liberación diferida — devolver automáticamente después de N
+  segundos sin actividad — evitaría que un agente que se cuelga a mitad de tarea se
+  quede con los controles hasta que alguien lo note.
+----------------------------------------------------------------------------------------
+

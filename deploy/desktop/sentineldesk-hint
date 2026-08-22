@@ -1,0 +1,65 @@
+#!/bin/sh
+# SentinelDesk
+# A collaborative operating system for people and AI agents.
+#
+# Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+#
+# Licensed under the Apache License, Version 2.0.
+#
+# This product's name and logo are trademarks of Federico Pereira and are not
+# covered by the license above. See the README for the trademark policy.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Opens a shell with one tool's usage already on screen.
+#
+# Some of the menu's network entries are command-line tools, and a menu item
+# that drops you at a bare prompt has told you nothing — you still have to
+# remember the flags, which is the part people actually look up. Printing the
+# two or three invocations that cover the common cases turns the menu entry
+# into what it looked like it was: a way to get the job started.
+#
+# The shell stays afterwards. These are tools you run more than once, adjusting
+# the target each time, and a window that closes on exit would make that a trip
+# back through the menu.
+
+case "$1" in
+  nmap)
+    cat <<'TXT'
+nmap — what is on this network, and what is it listening on
+
+  nmap -sn 192.168.1.0/24        which hosts are up (no port scan)
+  nmap -F 192.168.1.50           the 100 most common ports on one host
+  nmap -sV -p 22,80,443 HOST     what is actually answering on those ports
+
+TXT
+    ;;
+  iperf3)
+    cat <<'TXT'
+iperf3 — how much bandwidth is really there
+
+  iperf3 -s                      run this end as the server
+  iperf3 -c HOST                 measure from here to a server
+  iperf3 -c HOST -R              measure the other direction
+  iperf3 -c HOST -u -b 50M       UDP, which is what WebRTC actually uses
+
+TXT
+    ;;
+  mtr)
+    cat <<'TXT'
+mtr — traceroute and ping at the same time, updating live
+
+  mtr HOST                       interactive; q to quit
+  mtr -r -c 20 HOST              twenty pings and a report, for pasting
+
+Read the Loss% column at the LAST hop, not the middle ones: routers often
+deprioritise replies to themselves while forwarding perfectly.
+
+TXT
+    ;;
+  *)
+    echo "sentineldesk-hint: no notes for '${1:-nothing}'" >&2
+    ;;
+esac
+
+exec "${SHELL:-/bin/bash}" -l

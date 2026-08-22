@@ -1,0 +1,1188 @@
+<!--
+ * SentinelDesk
+ * A collaborative operating system for people and AI agents.
+ *
+ * Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+ *
+ * Licensed under the Apache License, Version 2.0.
+ *
+ * This product's name and logo are trademarks of Federico Pereira and are not
+ * covered by the license above. See the README for the trademark policy.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+-->
+
+
+<section id="getting-started">
+  <h1>SentinelDesk</h1>
+  <p class="lede">Um sistema operacional colaborativo para pessoas e agentes de
+  IA. Uma área de trabalho Linux, num contêiner, que os dois operam — vendo a
+  mesma tela, se revezando, e lendo os erros um do outro.</p>
+
+  <p>Essa segunda metade não é uma metáfora para uma API. É o mesmo display X, a
+  mesma sessão, a mesma sala:</p>
+
+  <ul>
+    <li><b>O agente é um participante</b>, não um processo em segundo plano. Ele
+      tem um nome na lista e um ponteiro na tela com a sua própria cor, para que
+      nunca seja ambíguo se o mouse foi movido por um colega ou pelo
+      modelo.</li>
+    <li><b>Eles se revezam.</b> O controle é pedido, nunca presumido — por
+        qualquer um, agente incluído, havendo alguém assistindo ou não. Ninguém
+        tem os controles até pedir, então entrar para assistir não lhe deixa um
+        desktop que você não queria. Quando alguém está dirigindo, pedir coloca um
+        aviso na tela dessa pessoa e não responder significa não.</li>
+    <li><b>Eles leem o mesmo estado.</b> Todo comando executado num terminal
+      informa seu código de saída, seja quem for que o rodou, então uma pessoa
+      pode esbarrar num erro e pedir ao agente que olhe o que de fato
+      aconteceu.</li>
+    <li><b>Uma captura, muitos observadores.</b> A área de trabalho é codificada
+      uma única vez e distribuída: para cada navegador, para a gravação, para
+      uma transmissão ao vivo. Um participante a mais custa banda, não CPU.</li>
+  </ul>
+
+  <p>As pessoas a operam por uma camada de controle no navegador. O agente a
+  opera por um socket local com 134 ferramentas MCP. Nenhum é convidado do
+  outro.</p>
+
+  <div class="note">
+    <b>Chegou agora?</b>
+    <p>Leia <a href="#install">Instalar</a> e
+    <a href="#control-layer">A camada de controle</a>. O resto é referência para
+    consultar quando precisar.</p>
+  </div>
+</section>
+
+<section id="stack">
+  <h2>Sobre o que é construído</h2>
+
+  <p>Um único binário Go. O GStreamer roda <em>dentro</em> do processo via
+  go-gst e não como um filho dele, então o codificador continua acessível em
+  tempo de execução — o bitrate segue a rede, os quadros-chave respondem a um
+  pedido, e um destino externo se conecta sem parar nada.</p>
+
+  <table>
+    <tr><th>Camada</th><th>O que usa</th></tr>
+    <tr><td>Área de trabalho</td><td>Xvfb, Openbox, xfce4-panel, xfdesktop;
+      Chromium, VLC, lxterminal, TigerVNC, FreeRDP</td></tr>
+    <tr><td>Captura</td><td><code>ximagesrc</code> com rastreamento de dano do X,
+      um único pipeline compartilhado por toda a sala</td></tr>
+    <tr><td>Vídeo</td><td>NVENC → VA-API → x264 → VP8, escolhido na
+      inicialização rodando um pipeline de teste real para cada um</td></tr>
+    <tr><td>Áudio</td><td>Sink nulo do PulseAudio → <code>opusenc</code>; e uma
+      fonte remapeada para que seu microfone apareça aos aplicativos como um
+      dispositivo de entrada real</td></tr>
+    <tr><td>Transporte</td><td>Pion WebRTC v4, controle de congestionamento GCC
+      sobre TWCC, quadros-chave por PLI, NACK, FEC em banda do Opus</td></tr>
+    <tr><td>Controle humano</td><td>Sinalização WebSocket e um DataChannel;
+      injeção XTEST, cursores XFixes, ponteiros de pares com XShape,
+      EWMH</td></tr>
+    <tr><td>Controle do agente</td><td>MCP sobre um socket Unix
+      <code>0600</code>, 134 ferramentas</td></tr>
+    <tr><td>Ler a tela</td><td>Árvore de acessibilidade AT-SPI, Chrome DevTools
+      Protocol — estrutura, não pixels</td></tr>
+    <tr><td>Interface web</td><td><code>go:embed</code>, servida com ETags sobre
+      o conteúdo para que uma imagem recompilada nunca seja servida
+      antiga</td></tr>
+  </table>
+
+  <p>A latência típica fica em torno de <b>50–70 ms</b> de tela a tela numa LAN,
+  mais a ida e volta até o servidor.</p>
+</section>
+
+<section id="capabilities">
+  <h2>O que cada lado pode fazer</h2>
+
+  <h3 id="capabilities-people">Uma pessoa, pela barra</h3>
+  <ul>
+    <li>Assumir e liberar o controle, e ver de relance quem o tem</li>
+    <li>Enviar o próprio microfone para a área de trabalho</li>
+    <li><a href="#voice">Falar com quem assiste</a> por uma conferência de voz
+      par a par que a área de trabalho nunca ouve</li>
+    <li>Capturas e gravação em MP4, WebM ou MKV, com a qualidade do
+      framebuffer</li>
+    <li><a href="#capture-stream-out">Transmitir a sessão para fora</a> para
+      YouTube, Twitch, Facebook, ou para o seu próprio VLC ou OBS</li>
+    <li>Mover arquivos nos dois sentidos com um gerenciador de dois painéis, ou
+      soltando-os em qualquer parte da página</li>
+    <li>Área de transferência compartilhada, e um controle que passa para a área
+      de trabalho</li>
+    <li>Estatísticas ao vivo: bitrate, quadros, pacotes, o quanto está atrás do
+      ao vivo, e um relógio com milissegundos</li>
+    <li>Tela cheia, três idiomas de interface, e esta documentação</li>
+      <li>Escolher a qualidade da transmissão pela barra — Auto, Média ou Alta</li>
+    <li>Um teclado na tela completo para tablets: espanhol ISO ou US ANSI</li>
+    <li>Sair da sessão pela barra quando a área de trabalho tem login</li>
+</ul>
+
+  <h3 id="capabilities-agent">Um agente, por MCP</h3>
+  <p>134 ferramentas, por famílias:</p>
+  <table>
+    <tr><th>Família</th><th>O que cobre</th></tr>
+    <tr><td>Encontrar as outras</td><td>Você descreve uma tarefa e recebe de
+      volta as ferramentas que a fazem, com seus esquemas — assim o agente não
+      precisa manter as 120 na cabeça de uma vez</td></tr>
+    <tr><td>Ponteiro e teclado</td><td>Mover, clicar, arrastar, rolar, digitar,
+      combinações de teclas, e um controle virtual</td></tr>
+    <tr><td>Janelas e áreas de trabalho</td><td>Listar, ativar, mover,
+      redimensionar, minimizar, maximizar, tela cheia, fechar; áreas de trabalho
+      virtuais; esperar uma janela aparecer</td></tr>
+    <tr><td>Aplicativos e processos</td><td>Iniciar, listar instalados, listar
+      em execução, encerrar, esperar ficar ocioso</td></tr>
+    <tr><td>Terminal</td><td>Abrir um terminal que a pessoa pode ver, executar
+      um comando nele, ler de volta — e ler o código de saída, seja quem for que
+      digitou</td></tr>
+    <tr><td>Shell e SSH</td><td>Shells persistentes; sessões SSH, transferência
+      de arquivos, geração de chaves, túneis locais e remotos</td></tr>
+    <tr><td>Áreas de trabalho remotas</td><td>Abrir a tela de outra máquina
+      dentro desta —RDP, VNC ou SPICE— numa janela que todos na sala veem;
+      perfis de conexão reutilizáveis com a senha guardada criptografada</td></tr>
+    <tr><td>Ler a tela</td><td>A árvore de acessibilidade, encontrar um
+      elemento, ler seu texto, esperar por um, comparar dois instantâneos; texto
+      e cor da tela; capturas de uma região</td></tr>
+    <tr><td>Navegador</td><td>Chromium por DevTools: abrir, abas, navegar,
+      clicar, digitar, ler texto, esperar um seletor, avaliar</td></tr>
+    <tr><td>Arquivos e pacotes</td><td>Ler, escrever, listar; buscar, instalar e
+      remover pacotes; controlar serviços</td></tr>
+    <tr><td>Captura</td><td>Capturas de tela, gravação, e iniciar ou parar uma
+      transmissão externa</td></tr>
+    <tr><td>A sala</td><td>Ver quem está presente, pedir o controle,
+      liberá-lo</td></tr>
+    <tr><td>Rede de segurança</td><td>Instantâneos aos quais pode voltar, e um
+      registro do que fez</td></tr>
+  </table>
+  <p>Veja <a href="#ai-agent">O agente de IA</a> para saber como conectar um e
+  como limitar o que ele pode fazer.</p>
+</section>
+
+<section id="install" data-track="install">
+  <h2>Instalar e colocar no ar</h2>
+
+  <p>Tudo roda num contêiner. Nas máquinas que se conectam não há nada a
+  instalar — o cliente é o navegador.</p>
+
+  <h3 id="install-requirements">O que é preciso</h3>
+  <ul>
+    <li><b>Docker</b> com Compose v2. Docker Desktop no macOS e no Windows,
+      Docker Engine no Linux.</li>
+    <li><b>2 GB de RAM</b> e dois núcleos para um 1080p30 confortável. A GPU é
+      opcional e muda muito — veja <a href="#gpu">Aceleração por
+      hardware</a>.</li>
+    <li><b>amd64</b> para o Steam e o Wine, que estão apenas na
+      <a href="#install-images">imagem full</a>. Todo o resto roda também em
+      arm64, nas duas imagens.</li>
+  </ul>
+
+  <h3 id="install-run">Formas de iniciar</h3>
+
+  <div class="tabs" data-group="install">
+    <div class="tab" data-label="Instalador">
+      <p>A forma de um único comando, em um VPS, um Raspberry Pi ou qualquer
+      host Linux. Instala o Docker se faltar, baixa a imagem publicada do Docker
+      Hub e deixa a área de trabalho rodando em segundo plano — nada para
+      clonar, nada para compilar.</p>
+<pre><code>curl -fsSL https://raw.githubusercontent.com/sentineldesk/desktop/main/install.sh | sudo bash</code></pre>
+      <p>Adicione <code>--full</code> para a imagem mais pesada,
+      <code>--pass &lt;p&gt;</code> para definir a senha e
+      <code>--ip &lt;addr&gt;</code> em um VPS público para que o vídeo seja
+      alcançável. <code>--help</code> lista todas as opções.</p>
+    </div>
+
+    <div class="tab" data-label="docker run">
+      <p>Menor, para uma olhada rápida. Sem TURN, então funciona numa LAN ou no
+      Linux mas pode não conectar através de um NAT restritivo.</p>
+<pre><code>docker run -d --name sentineldesk \
+  -p 8080:8080 -p 59000-59049:59000-59049/udp \
+  -e AUTH_USER=admin -e AUTH_PASS=troque-me \
+  -e WEBRTC_MIN_PORT=59000 -e WEBRTC_MAX_PORT=59049 \
+  -v sentineldesk-home:/home/sentineldesk \
+  -v sentineldesk-run:/run/sentineldesk \
+  -e MCP_SOCK=/run/sentineldesk/mcp.sock \
+  --shm-size 2g \
+  --cap-add NET_ADMIN --device /dev/net/tun \
+  cnsoluciones/sentineldesk:latest</code></pre>
+      <p>Por essa faixa UDP viaja a mídia do WebRTC. Publicá-la e fixá-la com as
+      duas variáveis é o que faz a conexão funcionar sem usar a rede do
+      host.</p>
+
+      <p>O volume <code>sentineldesk-run</code> e <code>MCP_SOCK</code> expõem o
+      socket MCP do agente fora do contêiner, então um agente no host — Claude
+      Code, ou <code>sentineldesk-agent</code> — pode conduzir a área de trabalho
+      diretamente, sem <code>docker exec</code>. Deixe-os de fora e o socket
+      permanece privado ao contêiner.</p>
+
+      <p><b>Assistir de outra máquina</b> — Docker numa VM ou num servidor, e
+      o navegador em outra máquina da LAN — precisa de mais uma variável. Por
+      padrão o contêiner anuncia ao WebRTC seu endereço interno da bridge, que
+      nenhuma outra máquina alcança, e a página fica parada em “Establishing
+      WebRTC”. <code>NAT1TO1_IP</code> diz qual é a sua face externa — e
+      colocar o mesmo endereço em <code>TLS_HOSTS</code> o inclui no
+      certificado:</p>
+<pre><code>docker run -d --name sentineldesk \
+  -p 8080:8080 -p 59000-59049:59000-59049/udp \
+  -e AUTH_USER=admin -e AUTH_PASS=troque-me \
+  -e WEBRTC_MIN_PORT=59000 -e WEBRTC_MAX_PORT=59049 \
+  -e NAT1TO1_IP=192.168.0.100 \
+  -e TLS_HOSTS=192.168.0.100 \
+  -v sentineldesk-home:/home/sentineldesk \
+  -v sentineldesk-run:/run/sentineldesk \
+  -e MCP_SOCK=/run/sentineldesk/mcp.sock \
+  --shm-size 2g \
+  --cap-add NET_ADMIN --device /dev/net/tun \
+  cnsoluciones/sentineldesk:latest</code></pre>
+      <p><code>192.168.0.100</code> representa a máquina onde o Docker roda —
+      use o endereço real dela na LAN, e abra
+      <code>https://192.168.0.100:8080</code>.</p>
+
+      <div class="note">
+        <b>HTTPS é o padrão</b>
+        <p>A área de trabalho serve TLS de fábrica: sem configurar nada, ela
+        gera um certificado autoassinado uma única vez, guarda no volume do
+        home, e o navegador pede para aceitá-lo exatamente uma vez. Seu
+        próprio certificado vence via <code>TLS_CERT</code>/<code>TLS_KEY</code>.
+        É mais que o cadeado: os navegadores só habilitam o microfone e a área
+        de transferência rica em origens seguras, então uma área de trabalho
+        alcançada por HTTP puro perdia recursos em silêncio.</p>
+        <p>Para terminar TLS você mesmo com um reverse proxy na frente —
+        nginx, Caddy, <a href="https://nginxproxymanager.com/">Nginx Proxy
+        Manager</a> — defina <code>TLS_SELFSIGNED=0</code>: o backend fala
+        HTTP puro com o proxy e o proxy serve o certificado dele.</p>
+      </div>
+
+      <p>As duas últimas linhas são o que
+      <a href="#whats-installed-vpn">o cliente de VPN</a> precisa: um dispositivo
+      de túnel e a capacidade de configurar rotas. Sem as duas, o OpenVPN instala
+      bem e só falha no momento em que alguém realmente precisa dele. Remova-as
+      num deploy que nunca vai discar uma VPN — <code>NET_ADMIN</code> deixa o
+      contêiner administrar a própria pilha de rede, o que é uma concessão
+      real.</p>
+
+      <div class="note">
+        <b>Onde foi parar <code>seccomp=unconfined</code></b>
+        <p>Versões anteriores desta página passavam
+        <code>--security-opt seccomp=unconfined</code>, e os arquivos compose
+        também o definiam. Nenhum dos dois faz mais isso. Existia por causa do
+        <b>Steam</b>, cujo bootstrap precisa de user namespaces que o perfil
+        padrão do Docker bloqueia, e o Steam só está na
+        <a href="#whats-installed">imagem full em amd64</a>. Ele amplia o que o
+        contêiner pode pedir ao kernel, e isso não se deixa ligado por um recurso
+        que a maioria das instalações nunca inicia.</p>
+        <p>Tem outro efeito que vale conhecer, na direção oposta: <b>com</b> ele,
+        o Chromium mantém o próprio sandbox. O contêiner testa os user namespaces
+        na inicialização e acrescenta <code>--no-sandbox</code> apenas quando
+        eles faltam, então o normal é um navegador sem sandbox — como sempre foi.
+        Nem o protocolo DevTools nem a árvore de acessibilidade mudam em qualquer
+        dos casos, então as ferramentas <code>browser_*</code> e
+        <code>ui_*</code> se comportam igual.</p>
+      </div>
+    </div>
+
+    <div class="tab" data-label="docker compose">
+      <p>A mesma imagem publicada, para quem prefere compose. Baixe o arquivo e
+      suba — sem clonar, sem compilar:</p>
+<pre><code>curl -fsSLO https://raw.githubusercontent.com/sentineldesk/desktop/main/docker-compose.yml
+AUTH_PASS=mude-me HOST_IP=192.168.0.100 docker compose up -d</code></pre>
+      <p>Defina <code>SENTINELDESK_TAG=full</code> para a imagem full, e
+      <code>HOST_IP</code> com o endereço pelo qual os navegadores alcançam este
+      host (seu IP de LAN ou público). O compose nomeia
+      <code>cnsoluciones/sentineldesk</code> diretamente.</p>
+    </div>
+
+    <div class="tab" data-label="Do código">
+      <p>Para mexer no código — o caminho de quem contribui. A imagem é
+      construída a partir da raiz do repositório para que o Dockerfile alcance
+      tanto as fontes Go quanto os
+      assets da área de trabalho.</p>
+<pre><code># verificação rápida de tipos no host, sem contêiner
+go build ./...
+# construir as duas variantes
+make image
+# ou apenas uma delas
+make image-lite
+make image-full
+# ou, sem make — atenção ao --target
+docker build -f deploy/Dockerfile --target desktop -t sentineldesk:latest .</code></pre>
+      <p><code>--target desktop</code> não é opcional. A última etapa do
+      Dockerfile é <code>full</code>, então omiti-lo constrói LibreOffice,
+      Firefox, GIMP, Wireshark e todo o resto — uns 2,5 GB — e depois marca isso
+      como <code>sentineldesk:latest</code>, um nome que em todos os outros
+      lugares significa lite.</p>
+      <p>A interface web vai embutida com <code>go:embed</code>, então mexer em
+      qualquer coisa dentro de <code>internal/webui/assets/</code> obriga a
+      reconstruir a imagem — a mudança não aparece recarregando a página.</p>
+    </div>
+  </div>
+
+  <h3 id="install-images">As duas imagens</h3>
+
+  <p>Um único Dockerfile produz as duas. <b>Lite</b> é a padrão e é para onde
+  <code>:latest</code> aponta:</p>
+
+  <table>
+    <tr><th>Tag</th><th>Também</th><th>O que é</th></tr>
+    <tr><td><code>sentineldesk:&lt;versão&gt;-lite</code></td>
+        <td><code>:latest</code>, <code>:lite</code></td>
+        <td>A área de trabalho e as ferramentas que alguém precisa dentro dela.
+          A padrão</td></tr>
+    <tr><td><code>sentineldesk:&lt;versão&gt;-full</code></td>
+        <td><code>:full</code></td>
+        <td>Acrescenta LibreOffice, Firefox, GIMP, Wireshark, um toolchain de
+          compilação e Go; em amd64 também Steam e Wine</td></tr>
+  </table>
+
+  <p>Para rodar a full, aponte para essa tag — uma palavra em
+  <code>docker run</code>, <code>SENTINELDESK_TAG=full</code> com compose, ou
+  <code>--full</code> com o instalador:</p>
+
+<pre><code>docker run -d --name sentineldesk … cnsoluciones/sentineldesk:full</code></pre>
+
+  <div class="note">
+    <b>A full é construída em cima da lite</b>
+    <p>Então tudo o que uma tem está na outra, e as duas compartilham todas as
+    camadas até o ponto onde se separam: uma máquina que já tem a lite baixa
+    apenas a diferença. <a href="#whats-installed">O que vem instalado</a>
+    percorre o que cada uma carrega e por quê.</p>
+  </div>
+
+  <h3 id="install-first-run">A primeira vez</h3>
+  <p>Abra <code>https://localhost:8080</code> (autoassinado — aceite o aviso do navegador uma vez). Com <code>AUTH_USER</code> e
+  <code>AUTH_PASS</code> definidos ele pede login; sem eles fica aberto.</p>
+
+<pre><code># acompanhar os logs da área de trabalho
+docker logs -f sentineldesk
+# um shell de root dentro do contêiner
+docker exec -it -u root sentineldesk bash
+# parar e remover (o volume do home é mantido)
+docker rm -f sentineldesk</code></pre>
+  <p>A partir de um checkout do código, os mesmos três são
+  <code>make logs</code>, <code>make shell</code> e <code>make down</code>.</p>
+
+  <p>A área de trabalho guarda seu home num volume nomeado,
+  <code>sentineldesk-home</code>, então os perfis do navegador, os aplicativos
+  instalados e a biblioteca do Steam sobrevivem a um reinício ou a uma
+  recompilação.</p>
+
+  <div class="note warn">
+    <b>Antes de colocar na internet</b>
+    <p>Defina <code>AUTH_USER</code>, <code>AUTH_PASS</code> e um
+    <code>AUTH_SECRET</code> fixo, e sirva por TLS. Veja
+    <a href="#production">Produção</a>.</p>
+  </div>
+</section>
+
+<section id="configuration" data-track="install">
+  <h2>Configuração</h2>
+
+  <p>Tudo são variáveis de ambiente. Nada precisa ser editado dentro da
+  imagem.</p>
+
+  <h3 id="config-display">Tela e vídeo</h3>
+  <table>
+    <tr><th>Variável</th><th>Padrão</th><th>Descrição</th></tr>
+    <tr><td><code>DISPLAY_WIDTH</code> / <code>DISPLAY_HEIGHT</code></td><td>1920 / 1080</td><td>Resolução da área de trabalho virtual</td></tr>
+    <tr><td><code>FPS</code></td><td>30</td><td>Quadros por segundo. 60 vale a pena com GPU e não sem ela</td></tr>
+    <tr><td><code>ENCODER</code></td><td>auto</td><td><code>auto</code>, <code>nvenc</code>, <code>vaapi</code>, <code>h264</code> (x264), <code>vp8</code></td></tr>
+    <tr><td><code>VIDEO_BITRATE_KBPS</code></td><td>4000</td><td>Um teto. O laço adaptativo só desce a partir dele</td></tr>
+    <tr><td><code>AUDIO_BITRATE</code></td><td>96000</td><td>Bitrate do Opus, em bits por segundo</td></tr>
+    <tr><td><code>REMOTE_CURSOR</code></td><td>0</td><td><code>1</code> desenha o ponteiro no servidor — mais fiel, e parece mais lento</td></tr>
+    <tr><td><code>WALLPAPER</code></td><td>—</td><td>Fixa uma imagem em todas as áreas de trabalho</td></tr>
+  </table>
+
+  <h3 id="config-region">Relógio e teclado</h3>
+  <p>Os dois são lidos quando a área de trabalho inicia, então uma única imagem
+  serve para qualquer região e nenhum fica gravado dentro dela.</p>
+  <table>
+    <tr><th>Variável</th><th>Padrão</th><th>Descrição</th></tr>
+    <tr><td><code>TZ</code></td><td>America/<wbr>Argentina/<wbr>Buenos_Aires</td><td>Qualquer nome de tzdata — <code>Europe/Madrid</code>, <code>UTC</code>…</td></tr>
+    <tr><td><code>KEYBOARD_LAYOUT</code></td><td>us</td><td>Um código de layout do X: <code>us</code>, <code>es</code> (Espanha), <code>latam</code>, <code>pt</code>, <code>fr</code>, <code>de</code>…</td></tr>
+    <tr><td><code>KEYBOARD_VARIANT</code></td><td>—</td><td>Uma variante opcional desse layout, repassada sem alteração</td></tr>
+  </table>
+    <p>Nem soltar nem enviar precisa do controle: entregar um arquivo à sala é
+  provisionar, não dirigir. Apagar, renomear ou mover o que já está lá, sim,
+  precisa.</p>
+
+  <p>Um valor escrito errado é reportado e ignorado em vez de aplicado pela
+  metade — veja <a href="#whats-installed-region">relógio e teclado</a>.</p>
+
+  <h3 id="config-session">Sessão e acesso</h3>
+  <table>
+    <tr><th>Variável</th><th>Padrão</th><th>Descrição</th></tr>
+    <tr><td><code>AUTH_USER</code> / <code>AUTH_PASS</code></td><td>—</td><td>Acesso. Os dois vazios significa sem autenticação — só desenvolvimento. Definir <b>apenas um se recusa a iniciar</b>: meio login é um typo, e a área de trabalho que isso produzia era aberta</td></tr>
+    <tr><td><code>AUTH_SECRET</code></td><td>aleatório</td><td>Chave HMAC dos tokens. Fixe-a ou cada reinício desconecta todos</td></tr>
+    <tr><td><code>AUTH_TTL_HOURS</code></td><td>12</td><td>Quanto dura uma sessão</td></tr>
+    <tr><td><code>MAX_VIEWERS</code></td><td>4</td><td>Quantas pessoas podem compartilhar uma área de trabalho</td></tr>
+    <tr><td><code>FILES_ROOT</code></td><td>/home/sentineldesk</td><td>Até onde o gerenciador de arquivos alcança</td></tr>
+    <tr><td><code>HTTP_PORT</code></td><td>8080</td><td>Porta do cliente web e da sinalização</td></tr>
+    <tr><td><code>HTTP_ADDR</code></td><td>—</td><td>Em qual interface escutar. Vazio significa todas. Defina <code>127.0.0.1</code> quando outra coisa termina o TLS na frente, ou o backend continua respondendo em claro ao lado do proxy</td></tr>
+  </table>
+
+  <h3 id="config-network">Rede e ICE</h3>
+  <table>
+    <tr><th>Variável</th><th>Padrão</th><th>Descrição</th></tr>
+    <tr><td><code>WEBRTC_MIN_PORT</code> / <code>WEBRTC_MAX_PORT</code></td><td>—</td><td>Faixa UDP fixa para o ICE, para poder publicá-la e filtrá-la</td></tr>
+    <tr><td><code>NAT1TO1_IP</code></td><td>—</td><td>O IP público a anunciar quando o servidor está atrás de NAT</td></tr>
+    <tr><td><code>STUN_EMBEDDED</code></td><td>1</td><td>A área de trabalho responde STUN por si mesma em <code>STUN_PORT</code> (publique a porta UDP); <code>0</code> desativa</td></tr>
+    <tr><td><code>STUN_PORT</code></td><td>3478</td><td>Porta UDP do respondedor embutido</td></tr>
+    <tr><td><code>STUN_SERVER</code></td><td>do Google</td><td>STUN usado pelo servidor</td></tr>
+    <tr><td><code>CLIENT_STUN</code></td><td>do Google</td><td>STUN entregue ao navegador</td></tr>
+    <tr><td><code>CLIENT_TURN_URLS</code></td><td>—</td><td>TURN entregue ao navegador, separados por vírgula</td></tr>
+    <tr><td><code>TURN_USER</code> / <code>TURN_PASS</code></td><td>—</td><td>Credenciais desse TURN</td></tr>
+  </table>
+  <p>A área de trabalho responde STUN por si mesma, ativa por padrão:
+  publique <code>3478/udp</code> e um navegador chegando de fora pergunta a
+  ela — no mesmo hostname de onde a carregou — «qual é o meu endereço?»,
+  sem nenhum servidor de terceiros no caminho. Responde só Binding
+  requests, com limite por IP, e não retransmite nada.</p>
+
+
+  <h3 id="config-tls">TLS</h3>
+  <table>
+    <tr><th>Variável</th><th>Padrão</th><th>Descrição</th></tr>
+    <tr><td><code>TLS_SELFSIGNED</code></td><td>0</td><td><code>1</code> gera um certificado uma vez e o guarda no volume</td></tr>
+    <tr><td><code>TLS_CERT</code> / <code>TLS_KEY</code></td><td>—</td><td>Caminhos para o seu próprio certificado e chave</td></tr>
+    <tr><td><code>TLS_HOSTS</code></td><td>—</td><td>Nomes extras no certificado autoassinado: IPs ou domínios, separados por vírgula</td></tr>
+  </table>
+
+  <h3 id="config-mcp">O agente de IA</h3>
+  <table>
+    <tr><th>Variável</th><th>Padrão</th><th>Descrição</th></tr>
+    <tr><td><code>MCP_POLICY</code></td><td>full</td><td><code>full</code>, <code>approve</code> (as ferramentas perigosas perguntam à sala), <code>safe</code> (sem as ferramentas que executam código ou tocam o sistema), <code>readonly</code></td></tr>
+    <tr><td><code>MCP_DENY</code> / <code>MCP_ALLOW</code></td><td>—</td><td>Padrões, para um controle mais fino que os quatro níveis</td></tr>
+    <tr><td><code>AGENT_NAME</code></td><td>AI agent</td><td>O nome com que o agente aparece na lista de participantes</td></tr>
+  </table>
+
+  <h3 id="config-tuning">Ajuste fino</h3>
+  <p>Valores padrão que quase sempre estão certos. Cada um existe porque sem ele
+  algo pontual deu errado.</p>
+  <table>
+    <tr><th>Variável</th><th>Padrão</th><th>Descrição</th></tr>
+    <tr><td><code>MIN_VIDEO_BITRATE_KBPS</code></td><td>1200</td><td>Um piso abaixo do laço adaptativo. Um cliente que não dá conta de <em>decodificar</em> parece uma rede congestionada, e sem piso o estimador continua baixando o alvo até a imagem não servir para ninguém</td></tr>
+    <tr><td><code>USE_DAMAGE</code></td><td>1</td><td>Rastreamento de dano do X. Desligado, a captura relê o framebuffer inteiro a cada quadro mesmo sem nada ter mudado. Ponha <code>0</code> só num driver onde se comporte mal</td></tr>
+    <tr><td><code>SOFTWARE_SCALE_HEIGHT</code></td><td>0</td><td>Codificar numa altura menor e deixar o navegador ampliar de volta. Só serve num host lento demais para 1080p por software; <code>0</code> desliga</td></tr>
+    <tr><td><code>RECORD_THREADS</code></td><td>2</td><td>Threads do codificador para as <em>gravações</em>, que só precisam acompanhar a taxa de quadros e não terminar cada quadro depressa. O valor próprio do codificador vem da contagem de núcleos e custa quase o dobro de CPU pelos mesmos quadros num host grande. Aumente se uma gravação perder quadros num host lento</td></tr>
+    <tr><td><code>AUDIO_DEVICE</code></td><td>sentineldesk.monitor</td><td>A fonte do PulseAudio que a captura lê</td></tr>
+    <tr><td><code>DISPLAY</code></td><td>:0</td><td>O display X capturado</td></tr>
+    <tr><td><code>TLS_DIR</code></td><td>/home/sentineldesk/.tls</td><td>Onde o certificado autoassinado é guardado. Dentro do volume, então sobrevive</td></tr>
+    <tr><td><code>ACTION_LOG</code></td><td>—</td><td>Um arquivo onde acrescentar cada ferramenta que o agente executa. Desligado a menos que definido</td></tr>
+    <tr><td><code>MCP_SOCK</code></td><td>—</td><td>Onde vive o socket MCP. Também dá para usar <code>-mcp-sock</code></td></tr>
+  </table>
+
+  <div class="note">
+    <b>A resolução não é o binário que muda</b>
+    <p><code>DISPLAY_WIDTH</code> e <code>DISPLAY_HEIGHT</code> são lidas pelo
+    Xvfb ao iniciar, não pelo servidor. Por isso a área de trabalho pode ser
+    reduzida em tempo de execução mas nunca ampliada além do reservado no boot —
+    e por isso mudá-las implica reiniciar o contêiner.</p>
+  </div>
+
+  <h3 id="config-flags">Flags de linha de comando</h3>
+  <p>O binário aceita nove. Cinco são do lado da IA; as outras quatro fazem do binário a sua própria distribuição. Todo o resto é variável
+  de ambiente, porque todo o resto é configuração de um serviço e não uma
+  decisão tomada a cada invocação.</p>
+  <table>
+    <tr><th>Flag</th><th>Descrição</th></tr>
+    <tr><td><code>-mcp-sock &lt;caminho&gt;</code></td><td>O socket Unix onde o servidor MCP escuta. Vazio significa que o servidor MCP não inicia. Por padrão usa <code>MCP_SOCK</code></td></tr>
+    <tr><td><code>-mcp-stdio</code></td><td>Rodar como ponte stdio em vez de como área de trabalho: conecta-se a <code>-mcp-sock</code> e retransmite JSON-RPC entre o stdin/stdout do host de IA e esse socket</td></tr>
+    <tr><td><code>-mcp-policy &lt;nível&gt;</code></td><td><code>full</code>, <code>safe</code> ou <code>readonly</code> — só para esta ponte</td></tr>
+    <tr><td><code>-mcp-deny &lt;lista&gt;</code></td><td>Ferramentas que esta ponte não pode usar, separadas por vírgula. Um <code>*</code> no fim casa por prefixo</td></tr>
+    <tr><td><code>-mcp-allow &lt;lista&gt;</code></td><td>Uma lista branca exclusiva para esta ponte</td></tr>
+    <tr><td><code>-version</code></td><td>Imprime versão, commit e data de compilação, e sai</td></tr>
+  </table>
+
+  <p>As três últimas restringem <b>uma conexão</b>, em cima do que
+  <code>MCP_POLICY</code> já permite. Uma ponte pode se estreitar mas nunca se
+  ampliar — e é isso que torna seguro dar a um agente um ponto de acesso somente
+  leitura sem mudar nada para os outros:</p>
+
+<pre><code>docker exec -i -u sentineldesk sentineldesk \
+  /usr/local/bin/sentineldesk -mcp-stdio \
+  -mcp-sock /run/user/1000/sentineldesk-mcp.sock \
+  -mcp-policy safe -mcp-deny 'ssh_*,install_packages'</code></pre>
+</section>
+
+<section id="gpu" data-track="install">
+  <h2>Aceleração por hardware</h2>
+
+  <p>O codificador é escolhido na inicialização rodando um pipeline de teste
+  real para cada candidato, então o que você obtém reflete o que de fato
+  funciona naquele host e não o que os drivers alegam. Force um com
+  <code>ENCODER=nvenc|vaapi|h264|vp8</code>.</p>
+
+  <p>Para usar uma GPU, passe o dispositivo ao contêiner. Para VA-API adicione
+  <code>--device /dev/dri</code> e a sonda a escolhe sozinha. NVENC precisa do
+  NVIDIA Container Toolkit e de <code>--gpus all</code>; sem uma GPU utilizável a
+  área de trabalho cai para codificação por software.</p>
+
+  <div class="note">
+    <b>Por que x264 e não VP8 sem GPU</b>
+    <p>Medido sobre conteúdo de área de trabalho, o libx264 em
+    <code>veryfast</code> sustenta 1080p por cerca de um terço do que o
+    <code>vp8enc</code> precisa, e H.264 é o que todo navegador decodifica por
+    hardware. Isso também importa do lado que recebe: um cliente que não dá
+    conta parece uma rede congestionada para o estimador, e arrasta o bitrate da
+    sala inteira para baixo.</p>
+  </div>
+</section>
+
+<section id="production" data-track="install">
+  <h2>Produção</h2>
+
+  <h3 id="production-security">O modelo de segurança</h3>
+  <p>É curto de enunciar: <b>o WebSocket é a única porta.</b></p>
+  <p>A primeira mensagem do WebSocket tem que ser uma de autenticação com
+  usuário e senha, ou com um token de sessão. Até validar não há handshake de
+  WebRTC nenhum — nem oferta SDP, nem ICE, nem DataChannel. Um token inválido,
+  uma oferta tentando pular a autenticação, ou silêncio passados os dez
+  segundos, fecham a conexão.</p>
+  <p>Falhas repetidas da mesma origem são limitadas e depois bloqueadas por um
+  tempo, então uma senha não é algo que se possa adivinhar rápido.</p>
+  <ul>
+    <li>Defina <code>AUTH_SECRET</code> com um valor fixo. Sem definir é
+      aleatório, e cada reinício invalida a sessão de todos.</li>
+    <li><code>FILES_ROOT</code> limita até onde o gerenciador de arquivos
+      alcança. Deixe dentro do home a menos que queira outra coisa.</li>
+    <li>Os downloads viajam com um tíquete de uso único na URL em vez do token
+      de sessão, então um link que vazar já está gasto.</li>
+    <li>O socket MCP é <code>0600</code> e local ao contêiner. Nunca é exposto
+      pela rede.</li>
+  </ul>
+
+  <h3 id="production-tls">TLS</h3>
+  <p>A área de trabalho serve HTTPS por conta própria. Sem nada configurado gera
+  um certificado autoassinado no primeiro início e o guarda no volume do home;
+  <code>TLS_HOSTS</code> coloca os nomes certos nele. Para usar o seu, passe
+  <code>TLS_CERT</code> e <code>TLS_KEY</code> (um sem o outro se recusa a
+  iniciar). Para terminar o TLS num proxy reverso na frente — nginx, Caddy —
+  defina <code>TLS_SELFSIGNED=0</code> para o backend falar HTTP puro com o
+  proxy. De qualquer forma o cliente muda para <code>wss://</code> sozinho. Isso
+  importa além do cadeado: o microfone e a área de transferência rica só
+  funcionam numa origem segura.</p>
+
+  <h3 id="production-ports">Portas e NAT</h3>
+  <table>
+    <tr><th>Porta</th><th>Protocolo</th><th>Para quê</th></tr>
+    <tr><td>8080</td><td>TCP</td><td>A interface web e o WebSocket</td></tr>
+    <tr><td>3478</td><td>UDP</td><td>O respondedor STUN embutido</td></tr>
+    <tr><td>59000–59049</td><td>UDP</td><td>Mídia WebRTC — fixe o intervalo com
+      <code>WEBRTC_MIN_PORT</code> / <code>WEBRTC_MAX_PORT</code></td></tr>
+  </table>
+
+  <p>Se o host está atrás de NAT e não tem seu endereço alcançável na própria
+  interface — um VPS na nuvem, ou Docker numa VM — defina <code>NAT1TO1_IP</code>
+  com esse endereço (seu IP de LAN ou público) para que o WebRTC anuncie algo
+  que o navegador possa alcançar. Sem isso o navegador recebe o endereço da
+  bridge do contêiner e o vídeo conecta e fica preto.</p>
+
+  <div class="note">
+    <b>TURN no macOS e no Windows</b>
+    <p>O Docker Desktop roda o contêiner dentro de uma VM, então os endereços
+    que o ICE descobre são os da VM e não são alcançáveis, e pode não se formar
+    uma conexão direta. Um relay TURN fecha essa lacuna — aponte o navegador
+    para um com <code>CLIENT_TURN_URLS</code> (e <code>TURN_USER</code> /
+    <code>TURN_PASS</code>). Num host Linux com as portas acima publicadas, nada
+    disso é necessário.</p>
+  </div>
+</section>
+
+<section id="updating" data-track="install">
+  <h2>Atualizar e o estado</h2>
+
+  <p>Reconstruir substitui a imagem; não toca no home.</p>
+
+<pre><code>git pull
+make up</code></pre>
+
+  <p>O que sobrevive vive no volume nomeado <code>sentineldesk-home</code>:
+  perfis do navegador, aplicativos que você instalou, a biblioteca do Steam, o
+  certificado autoassinado. O que não, é qualquer coisa escrita fora do home
+  dentro do contêiner — isso vai embora com a imagem antiga.</p>
+
+  <p>Para começar do zero, e perder tudo isso:</p>
+<pre><code>make down
+docker volume rm sentineldesk-home</code></pre>
+
+  <div class="note">
+    <b>Recompilou e continua vendo a interface antiga</b>
+    <p>Não deveria acontecer: o cliente é servido com um ETag sobre os próprios
+    bytes, então o navegador é obrigado a revalidar. Se ainda assim acontecer,
+    confirme que o contêiner foi recriado e não apenas reiniciado —
+    <code>make up</code> reconstrói e recria.</p>
+  </div>
+</section>
+
+<section id="control-layer" data-track="use">
+  <h2>A camada de controle</h2>
+
+  <p>Tudo o que se opera fica numa barra à esquerda da janela do navegador. Ela
+  flutua sobre o vídeo ao vivo de uma área de trabalho real, então é translúcida
+  de propósito: o que ela cobre é área de trabalho que você deixa de ver.</p>
+
+  <p>Com <kbd>º</kbd> ela aparece e desaparece. Essa tecla nunca chega à área de
+  trabalho remota.</p>
+
+  <table>
+    <tr><th>Grupo</th><th>O que tem</th></tr>
+    <tr><td>Captura</td><td>Microfone, captura de tela, gravação,
+      <a href="#capture-stream-out">transmitir</a></td></tr>
+    <tr><td>Sessão</td><td>Arquivos, áudio sim/não, estatísticas</td></tr>
+    <tr><td>Visualização</td><td>Tela cheia, idioma</td></tr>
+  </table>
+
+  <p>As janelas desta camada — o gerenciador de arquivos, as estatísticas, a
+  transmissão — continuam abertas enquanto você usa a barra, são arrastadas pelo
+  título e fecham só pelo próprio <b>×</b>. Duplo clique no título recentraliza
+  a que ficou num lugar ruim.</p>
+</section>
+
+<section id="sharing-session" data-track="use">
+  <h2>Compartilhar a sessão</h2>
+
+  <p>Uma área de trabalho, vários participantes. O modelo é o de um console
+  compartilhado: <b>exatamente um participante tem o controle</b> por vez e o
+  resto assiste. A captura é codificada uma única vez e enviada a todos, então
+  um espectador a mais custa banda, não CPU.</p>
+
+  <h3 id="sharing-control">Assumir e liberar o controle</h3>
+  <p>O painel de presença no topo da barra diz em qual dos três estados você
+  está: você está dirigindo, outra pessoa está, ou ninguém está. Entre pessoas o
+  controle é cooperativo — qualquer um pode assumir, e quem tinha vê a mudança
+  na hora. Não há hierarquia, porque todos entraram com a mesma credencial.</p>
+
+  <p><b>Entrar não lhe dá o controle.</b> O desktop começa sem ninguém
+  dirigindo e continua assim até que alguém peça, então abri-lo para ver um
+  colega trabalhar é algo que você pode fazer sem tirar a máquina de baixo dele.
+  Toque em <b>Assumir controle</b> quando realmente quiser.</p>
+
+  <p><b>Liberar deixa os controles livres; não os passa ao próximo.</b>
+  «Terminei» e «é a sua vez» são frases diferentes, e só a primeira é verdadeira
+  alguma vez. O mesmo vale se quem dirige simplesmente fecha a aba: os controles
+  ficam livres em vez de cair sobre quem está conectado há mais tempo.</p>
+
+  <div class="note">
+    <b>A barra flutuante</b>
+    <p>Uma barra na parte de baixo da tela diz a todos como está a situação, e
+    leva o botão: <b>verde</b> quando os controles estão livres, âmbar quando
+    outra pessoa está dirigindo. Ela fica enquanto isso for verdade em vez de
+    passar rápido — o momento em que o agente termina uma tarefa é justamente
+    quando você pode estar olhando para outro lado.</p>
+  </div>
+
+
+  <h3 id="sharing-inks">Quem é quem: tintas e ponteiros</h3>
+  <p>Cada participante recebe uma cor ao entrar — amarelo o primeiro,
+  depois ciano, magenta e quase-preto — e <b>o violeta sempre é o agente de
+  IA</b>, nunca uma pessoa. Os pontos da lista a vestem, e o ponteiro
+  também: enquanto você assiste, o seu mouse sobre a área de trabalho é
+  desenhado lá para os outros, com o seu nome e na sua tinta — apontar
+  coisas funciona sem tomar o controle. As gravações e as transmissões de
+  saída incluem esses ponteiros, porque são desenhados na própria área de
+  trabalho.</p>
+
+  <h3 id="sharing-agent">A vez do agente de IA</h3>
+  <p>O agente é um participante como qualquer outro: um nome na lista e um
+  ponteiro na tela com a sua própria cor, para que nunca seja ambíguo se o mouse
+  foi movido por um colega ou pelo modelo.</p>
+
+  <p>A regra é uma linha: <b>o controle é pedido, nunca presumido.</b> Isso vale
+  para o agente havendo alguém assistindo ou não — uma sala vazia era um passe
+  livre e deixou de ser. Pedir não custa nada quando os controles estão livres,
+  porque a resposta volta na hora; o que se ganha é uma sala que sempre sabe
+  quem tem o desktop. Quando alguém ESTÁ dirigindo, o agente tem que pedir a
+  essa pessoa — aparece um aviso na sua tela com um temporizador esvaziando, e não
+  responder é não.</p>
+
+  <div class="note">
+    <b>Ler os erros do outro</b>
+    <p>Todo comando executado num terminal desta área de trabalho informa seu
+    código de saída, seja quem for que o rodou. Assim uma pessoa pode esbarrar
+    num erro, pedir ao agente que olhe, e o agente lê o que realmente aconteceu
+    em vez de ouvir um relato.</p>
+  </div>
+</section>
+
+<section id="capture-recording" data-track="use">
+  <h2>Capturas e gravação</h2>
+
+  <p>As duas estão no grupo Captura, e as duas passam pelo <b>servidor</b> e não
+  pelo navegador. Isso significa que o arquivo sai com a qualidade do
+  framebuffer, sem a compressão da transmissão — e em MP4, que abre em qualquer
+  sistema operacional sem instalar nada. Também há WebM e MKV.</p>
+
+  <p>Os ponteiros dos outros participantes são desenhados sobre o próprio
+  display X, então aparecem nas capturas e gravações do mesmo jeito que na
+  tela.</p>
+</section>
+
+<section id="capture-stream-out" data-track="use">
+  <h2>Transmitir a área de trabalho para fora</h2>
+
+  <p><b>Transmitir</b>, no grupo Captura, envia a sessão ao vivo para outro
+  lugar: YouTube, Twitch ou Facebook com apenas a chave de transmissão, ou um
+  endereço completo para um VLC ou OBS seu.</p>
+
+  <p>Ele reaproveita a codificação que a sala já está produzindo. Entrar ao vivo
+  não interrompe o que os outros estão vendo, e um destino a mais custa um
+  multiplexador e um socket em vez de uma segunda captura da tela. O
+  multiplicador que é real é a banda: cada destino leva o fluxo inteiro para
+  fora da máquina.</p>
+
+  <p>Quem tem o controle decide, e a lista de destinos é vista pela sala toda —
+  uma sessão sendo transmitida não é algo para se descobrir depois. As chaves de
+  transmissão são censuradas antes de chegar a qualquer navegador ou log.</p>
+
+  <h3 id="stream-out-platforms">YouTube, Twitch, Facebook</h3>
+  <p>Escolha a plataforma e cole <b>apenas a chave de transmissão</b>. O
+  endereço de ingestão já é conhecido, então não há nada a procurar.</p>
+
+  <h3 id="stream-out-vlc">Assistir no VLC</h3>
+
+  <p>Dois passos, nesta ordem: <b>primeiro coloque o VLC para escutar</b>, e só
+  então aperte <em>Entrar ao vivo</em>. Se não houver ninguém escutando, a área
+  de trabalho não tem para onde enviar.</p>
+
+  <p><b>Passo 1 — colocar o VLC em modo de escuta na sua própria
+  máquina:</b></p>
+
+  <div class="tabs" data-group="os">
+    <div class="tab" data-label="macOS">
+      <p>O VLC não deixa um comando <code>vlc</code>; é preciso chamar o binário
+      que está dentro do aplicativo.</p>
+      <pre><code>"/Applications/VLC.app/Contents/MacOS/VLC" \
+  --network-caching=200 "udp://@:5000"</code></pre>
+    </div>
+    <div class="tab" data-label="Linux">
+      <pre><code>vlc --network-caching=200 "udp://@:5000"</code></pre>
+    </div>
+    <div class="tab" data-label="Windows">
+      <p>Do PowerShell ou do prompt de comando:</p>
+      <pre><code>"C:\Program Files\VideoLAN\VLC\vlc.exe" ^
+  --network-caching=200 "udp://@:5000"</code></pre>
+    </div>
+  </div>
+
+  <p>O <code>@</code> é o que faz o VLC <em>escutar</em> em vez de conectar —
+  sem ele nada acontece e nenhum erro é impresso.
+  <code>--network-caching=200</code> baixa o buffer dele de um segundo para
+  200 ms; se deixar de fora, você vai culpar a transmissão por um atraso que é
+  do VLC.</p>
+
+  <p>Você pode conferir que ele está mesmo escutando:</p>
+<pre><code># Linux / macOS — deve mostrar UDP *:5000, não uma porta alta aleatória
+lsof -nP -iUDP:5000</code></pre>
+
+  <p><b>Passo 2 — na barra, escolha <em>VLC / OBS</em> e informe o
+  endereço:</b></p>
+
+  <table>
+    <tr><th>Onde o Docker roda</th><th>Endereço a usar</th></tr>
+    <tr><td>Docker Desktop, mesma máquina que o VLC (macOS, Windows)</td>
+        <td><code>udp://host.docker.internal:5000</code></td></tr>
+    <tr><td>Docker no Linux, mesma máquina que o VLC</td>
+        <td><code>udp://172.17.0.1:5000</code></td></tr>
+    <tr><td>Outra máquina</td>
+        <td><code>udp://&lt;IP dessa máquina&gt;:5000</code></td></tr>
+  </table>
+
+  <p>Deixe <em>Espectadores podem entrar a qualquer momento</em> desmarcado. É
+  um receptor seu — ele não precisa de um quadro-chave a cada dois segundos, e
+  os bits economizados voltam a manter o texto legível.</p>
+
+  <div class="note stop">
+    <b>Por que udp:// e não srt:// para o VLC</b>
+    <p>O VLC 3 fala SRT apenas como <em>chamador</em>: ele consegue conectar
+    para fora, mas não consegue receber uma conexão, e o
+    <code>?mode=listener</code> é ignorado em silêncio. Se apontar o
+    SentinelDesk para ele por SRT, os dois lados acabam chamando, nenhum atende,
+    e nada é registrado porque nada falhou. Para o VLC use
+    <code>udp://</code>.</p>
+  </div>
+
+  <h3 id="stream-out-obs">Assistir no OBS</h3>
+  <p>Adicione uma <b>Fonte de Mídia</b>, desmarque <em>Arquivo local</em>, e
+  coloque o mesmo <code>udp://@:5000</code> no campo de entrada. O OBS também
+  aceita <code>srt://</code>, em modo de escuta.</p>
+
+  <h3 id="stream-out-protocols">Qual protocolo usar</h3>
+  <table>
+    <tr><th>Esquema</th><th>Para quê</th></tr>
+    <tr><td><code>udp://</code></td><td>Um reprodutor na sua rede. Funciona em
+      todo lugar, não há nada a negociar.</td></tr>
+    <tr><td><code>srt://</code></td><td>Um receptor pela internet que
+      <em>escuta</em>: um servidor SRT, OBS em modo de escuta. Recupera-se de
+      perda de pacotes; numa LAN não acrescenta nada.</td></tr>
+    <tr><td><code>rtmp://</code>, <code>rtmps://</code></td><td>As plataformas.
+      Antigo e desajeitado, e a única coisa que elas aceitam.</td></tr>
+  </table>
+
+  <h3 id="stream-out-keyframes">Sobre os quadros-chave</h3>
+  <p>Um espectador não vê nada até chegar um quadro-chave, então uma plataforma
+  que atende gente que aparece a qualquer momento precisa de um a cada dois
+  segundos. Isso é aplicado sozinho enquanto houver um destino desses conectado,
+  e volta a ser sob demanda assim que o último para.</p>
+
+  <p>Quadros-chave são de dez a cinquenta vezes maiores que um normal, e cada
+  bit que ocupam é um bit que não foi gasto no texto da sua tela. Um receptor
+  que você mesmo inicia pode simplesmente esperar pelo primeiro, e por isso a
+  imagem fica mais nítida.</p>
+
+  <div class="note warn">
+    <b>Somente H.264</b>
+    <p>Nenhum destino de transmissão aceita VP8. A detecção automática do
+    codificador prefere x264 a VP8, então normalmente isso já é verdade; num
+    host onde não for, defina <code>ENCODER=x264</code>.</p>
+  </div>
+
+  <h3 id="stream-out-address">O endereço fica guardado</h3>
+  <p>O que você digita fica guardado neste navegador, por destino, então
+  reabrir o painel durante a transmissão mostra o que está sendo enviado e parar
+  não significa colar a chave de novo. É guardado do mesmo jeito que um
+  navegador guarda uma senha: nesta máquina, para este site, e em nenhum outro
+  lugar.</p>
+</section>
+
+<section id="file-transfer" data-track="use">
+  <h2>Mover arquivos</h2>
+
+  <p><b>Arquivos</b>, no grupo Sessão, abre um gerenciador de dois painéis: a
+  área de trabalho remota à esquerda, a sua máquina à direita. As teclas de
+  função embaixo fazem o de sempre — <kbd>F5</kbd> copiar, <kbd>F6</kbd>
+  renomear, <kbd>F7</kbd> nova pasta, <kbd>F8</kbd> excluir, <kbd>F2</kbd>
+  atualizar.</p>
+
+  <p>Você também pode <b>soltar arquivos em qualquer parte da página</b> para
+  enviá-los à área de trabalho, sem abrir o gerenciador.</p>
+
+  <p>Os downloads viajam com um tíquete de uso único na URL em vez do seu token
+  de sessão, então um link que vazar já está gasto e não serve.
+  <code>FILES_ROOT</code> limita até onde o gerenciador alcança.</p>
+</section>
+
+<section id="microphone" data-track="use">
+  <h2>Seu microfone, na área de trabalho</h2>
+
+  <p><b>Microfone</b>, no grupo Captura, envia seu microfone para o contêiner,
+  onde os aplicativos o veem como um dispositivo de entrada real — e não como o
+  monitor de algo que está tocando, que é o que os navegadores escondem do seu
+  seletor de microfones. Qual ele usa se escolhe em <b>Ajustes</b> — a
+  engrenagem no trilho, ou clique direito sobre o botão.</p>
+
+  <p>Só o participante que tem o controle pode publicar áudio. Sua voz passa a
+  fazer parte da área de trabalho: os aplicativos, as gravações e as
+  transmissões de saída a escutam. Para falar com as outras pessoas da sala
+  sem que a área de trabalho ouça uma palavra, veja <a href="#voice">Voz</a>.</p>
+</section>
+
+<section id="voice" data-track="use">
+  <h2>Voz, entre quem assiste</h2>
+
+  <p><b>Voz</b>, no grupo Sessão, é a outra conversa: uma conferência de voz
+  entre as pessoas da sala, navegador a navegador. A área de trabalho nunca a
+  ouve — as gravações, as transmissões de saída e os aplicativos lá dentro não
+  carregam rastro dela. Imagine quatro pessoas narrando um vídeo que toca na
+  tela compartilhada: a narração é a Voz; o som do vídeo continua sendo da
+  área de trabalho.</p>
+
+  <p>Entra-se um a um, como num rádio: apertar o seu próprio botão captura o
+  seu microfone e anuncia você, e não liga nada para ninguém mais. Quem também
+  estiver com a Voz ativa se conecta a você <b>direto, par a par</b> — o áudio
+  viaja entre navegadores, e o servidor só repassa os envelopes lacrados do
+  cumprimento sem lê-los. Com três ou quatro pessoas é uma malha: cada par tem
+  a sua própria conexão, todos se escutam.</p>
+
+  <p>Sozinho na conferência nada soa: o contador do botão mostra quantos pares
+  estão conectados, e <b>0</b> é um estado de espera, não uma falha. A ordem
+  também não importa — quem ativar a Voz mais tarde se anuncia e os pares se
+  formam sozinhos. Apertar o botão de novo sai da conferência e libera o seu
+  microfone.</p>
+
+  <p>Qual dispositivo cada conversa usa — o microfone da área de trabalho e o
+  da conferência — se escolhe em <b>Ajustes</b>, onde um medidor de nível e o
+  teste de se ouvir respondem "este me escuta?" antes que alguém mais precise.
+  A Voz não precisa de controle nem de turno: assistir basta. É a conversa
+  <i>sobre</i> a área de trabalho, não com ela.</p>
+</section>
+
+
+<section id="settings" data-track="use">
+  <h2>Ajustes: seus dispositivos e seu nome</h2>
+
+  <p>A engrenagem no grupo Sessão — ou o clique direito sobre
+  <b>Microfone</b> — abre os Ajustes. Responde às duas perguntas que toda
+  chamada acaba fazendo: qual dispositivo, e se ele me escuta.</p>
+
+  <p><b>Microfone</b> e <b>Voz</b> se escolhem separadamente, porque são
+  atos distintos — a entrada da própria área de trabalho e a conferência de
+  quem assiste — e alguém com headset e microfone de mesa realmente os quer
+  separados. O medidor de nível segue o último seletor que você tocou;
+  <b>Ouvir a mim mesmo</b> reproduz a sua própria voz na saída escolhida
+  (melhor com fones), e o teste de alto-falantes toca na saída que você
+  escolheu. As escolhas ficam lembradas por navegador e valem na hora,
+  mesmo no meio da sessão.</p>
+
+  <p><b>Seu nome</b> também mora aqui: letras, números, espaço, hífen e
+  sublinhado. Aparece na lista, no registro de auditoria da sessão e na
+  etiqueta do ponteiro que os outros veem — defina uma vez e a sala para de
+  chamá-lo de «Viewer 2».</p>
+</section>
+
+<section id="on-screen-keyboard" data-track="use">
+  <h2>O teclado na tela</h2>
+
+  <p><b>Teclado</b>, no grupo Visor, ancora um teclado completo na borda
+  inferior da tela — feito para tablets, útil em qualquer lugar. Duas
+  disposições (<b>ES</b>, espanhol ISO com ñ, ç e as teclas mortas;
+  <b>EN</b>, US ANSI), teclado numérico e bloco de navegação atrás do botão
+  <b>123</b>, e uma variante compacta <b>Mini</b>. O botão <b>—</b> o
+  guarda numa pílula embaixo ao centro; toque nela para trazê-lo de
+  volta.</p>
+
+  <p>Os acentos se compõem como no teclado de um celular: toque <b>´</b> e
+  depois uma vogal e chega um á — toque o acento duas vezes para o
+  caractere literal. Shift, Ctrl, Alt e AltGr são travas: toque uma, toque
+  uma tecla, e o acorde viaja. A <b>tecla do monitor</b> é o ⊞ desta área
+  de trabalho — um toque abre o menu de aplicativos.</p>
+
+  <p>Numa tela de toque a própria área de trabalho é manipulação direta: um
+  dedo é o ponteiro com o botão esquerdo pressionado, dois dedos rolam, e
+  um toque rápido com dois dedos é o botão direito.</p>
+
+  <p>Com o teclado aberto, um teclado físico <b>acende as suas próprias
+  teclas</b> à medida que você digita — o mesmo vermelho de um toque. É um
+  «é assim que eu escrevo» ao vivo, e confirma num relance que as teclas
+  estão chegando.</p>
+</section>
+
+
+<section id="webmcp" data-track="use">
+  <h2>A IA do próprio navegador pode dirigi-la</h2>
+
+  <p>Além do agente que se conecta por MCP, a área de trabalho oferece um
+  conjunto de ferramentas à <b>IA que o próprio navegador carrega</b> — a
+  emergente API de «model context» que o Gemini integrado do Chrome lê. Nada
+  a instalar nem chave a colar: a partir do momento em que você está
+  autenticado e conectado, a página publica suas ferramentas e o modelo do
+  navegador pode agir através delas.</p>
+
+  <p>As ferramentas fazem exatamente o que <b>você</b> faz, pelo exatamente
+  seu caminho: digitar, pressionar teclas, mover e clicar com o ponteiro,
+  rolar, definir a área de transferência, tirar uma captura, listar e
+  organizar arquivos, ajustar a qualidade, assumir ou liberar o controle.
+  Viajam pelo mesmo DataChannel autenticado que os seus próprios cliques —
+  sem endpoint à parte, sem segundo login. Assim a IA do navegador alcança
+  exatamente até onde você alcança e nem um passo além: tudo o que escreve na
+  área de trabalho espera até que o controle seja mantido, e pede ao modelo
+  que o assuma primeiro.</p>
+
+  <p>As ferramentas aparecem quando a sessão está ao vivo e desaparecem ao
+  terminar.</p>
+</section>
+
+<section id="ai-agent" data-track="use">
+  <h2>O agente de IA</h2>
+
+  <p>O SentinelDesk expõe <b>134 ferramentas</b> por um socket Unix local usando
+  o Model Context Protocol. Um host de IA — Claude Code, Claude Desktop, ou
+  qualquer coisa que fale MCP — conecta através de uma ponte fina:</p>
+
+<pre><code>docker exec -i sentineldesk sentineldesk -mcp-stdio</code></pre>
+
+  <p>Matar o host de IA não derruba a área de trabalho junto. O socket é
+  <code>0600</code> e local ao contêiner.</p>
+
+  <h3 id="ai-agent-connect">Como conectar um</h3>
+  <p>A ponte é um subcomando do mesmo binário, executado com
+  <code>docker exec</code>. Na configuração do seu cliente MCP:</p>
+<pre><code>{
+  "mcpServers": {
+    "sentineldesk": {
+      "command": "docker",
+      "args": [
+        "exec", "-i", "-u", "sentineldesk", "sentineldesk",
+        "/usr/local/bin/sentineldesk", "-mcp-stdio",
+        "-mcp-sock", "/run/user/1000/sentineldesk-mcp.sock"
+      ]
+    }
+  }
+}</code></pre>
+  <p><code>-i</code> mantém o stdin aberto, que é o transporte;
+  <code>-u sentineldesk</code> roda como o dono do socket.</p>
+
+  <p>As ferramentas cobrem mouse e teclado, janelas, execução de comandos,
+  capturas e gravação, o navegador via DevTools, a árvore de acessibilidade —
+  para que o agente leia o que está na tela como estrutura e não como pixels —
+  arquivos, pacotes, SSH, e a própria sala.</p>
+
+  <h3 id="ai-agent-search">Encontrar a ferramenta certa</h3>
+  <p>Cento e quinze descrições de ferramentas são uma fatia real da atenção de
+  um modelo, gasta antes de ele ler o seu pedido. <code>tool_search</code> é a
+  saída: você descreve a tarefa e recebe de volta o punhado de ferramentas que a
+  fazem, com os esquemas de entrada junto, para poder chamá-las na hora.</p>
+
+<pre><code>{"name": "tool_search", "arguments": {"query": "dar acesso remoto a alguém"}}</code></pre>
+
+  <p>Isso devolve as ferramentas <code>ssh_*</code>, ordenadas por relevância,
+  cada uma com seu nível de risco e seu esquema. Para pedir um tema inteiro use
+  <code>{"category": "ssh"}</code> — os temas são <code>ssh</code>,
+  <code>shell</code>, <code>terminal</code>, <code>browser</code>,
+  <code>accessibility</code>, <code>windows</code>, <code>input</code>,
+  <code>screen</code>, <code>files</code>, <code>processes</code>,
+  <code>packages</code>, <code>snapshot</code>, <code>recording</code>,
+  <code>restream</code>, <code>room</code>, <code>audio</code>,
+  <code>clipboard</code>, <code>desktops</code>,
+  <code>system</code> e <code>general</code>.</p>
+
+  <p>Buscar só economiza alguma coisa se houver algo que não está sendo
+  listado, e a maioria dos hosts de IA já resolve isso por conta própria — o
+  Claude Code adia os esquemas e os carrega sob demanda. Para os que não, defina
+  <code>MCP_DISCOVERY=1</code>: a lista de ferramentas passa a anunciar um
+  conjunto básico de doze — o bastante para olhar a área de trabalho, ler sua
+  estrutura, clicar, digitar e executar algo — e deixa o
+  <code>tool_search</code> revelar o resto.</p>
+
+  <p><b>Todas as outras continuam chamáveis.</b> A descoberta restringe o que é
+  <i>anunciado</i>, nunca o que é <i>permitido</i>; disso cuida a política, mais
+  abaixo. Uma ferramenta que ficou fora da lista é uma sobre a qual o agente
+  ainda não foi informado, não uma que ele esteja proibido de usar.</p>
+
+  <h3 id="ai-agent-policy">Limitar o que ele pode fazer</h3>
+  <p>Cada ferramenta declara o que pode fazer com a máquina, e os níveis de
+  política se apoiam nessa única declaração:</p>
+  <table>
+    <tr><th>Risco</th><th>O que significa</th><th>Exemplo</th></tr>
+    <tr><td><code>read</code></td><td>Observa; não muda nada</td>
+      <td><code>screenshot</code>, <code>ui_tree</code></td></tr>
+    <tr><td><code>write</code></td><td>Conduz a área de trabalho — entrada,
+      janelas, volume, área de transferência — mas não alcança o sistema por
+      baixo</td><td><code>mouse_click</code>, <code>type_text</code></td></tr>
+    <tr><td><code>danger</code></td><td>Executa código, toca o sistema ou leva
+      dados para fora</td>
+      <td><code>run_command</code>, <code>ssh_exec</code></td></tr>
+  </table>
+
+  <table>
+    <tr><th>Variável</th><th>Efeito</th></tr>
+    <tr><td><code>MCP_POLICY=full</code></td><td>Tudo (padrão)</td></tr>
+    <tr><td><code>MCP_POLICY=approve</code></td><td>As ferramentas
+      <code>danger</code> esperam que uma pessoa na sala permita cada chamada —
+      um aviso com a ferramenta e seus argumentos, Permitir / Negar; ninguém
+      presente significa não</td></tr>
+    <tr><td><code>MCP_POLICY=safe</code></td><td>Remove as ferramentas
+      <code>danger</code>: as que executam código ou tocam o sistema</td></tr>
+    <tr><td><code>MCP_POLICY=readonly</code></td><td>Só as
+      <code>read</code></td></tr>
+    <tr><td><code>MCP_DENY</code> / <code>MCP_ALLOW</code></td><td>Padrões, para
+      um controle mais fino</td></tr>
+    <tr><td><code>MCP_DISCOVERY=1</code></td><td>Anunciar só o conjunto básico e
+      deixar o <code>tool_search</code> encontrar o resto. Não é uma permissão —
+      veja acima</td></tr>
+  </table>
+
+  <p>Uma conexão pode se restringir mais, mas nunca se ampliar — e é isso que
+  torna seguro dar a um agente um ponto de acesso somente leitura sem mudar nada
+  para os outros.</p>
+
+  <p>Os níveis de risco também são publicados como as anotações
+  <code>readOnlyHint</code> e <code>destructiveHint</code> do próprio Model
+  Context Protocol, de modo que um host de IA que as entenda pode decidir
+  sozinho quando perguntar antes de agir — sem saber nada sobre o
+  SentinelDesk.</p>
+</section>
+
+<section id="whats-installed" data-track="use">
+  <h2>O que vem instalado, e as duas imagens</h2>
+  <p>De uma mesma construção saem duas variantes. <b>Lite</b> é a padrão;
+  <b>full</b> acrescenta o que é grande demais ou específico demais para entregar
+  a todo mundo.</p>
+
+  <p>Aqui «lite» não significa sem desktop — numa Raspberry Pi é exatamente isso
+  que significa, mas aqui o desktop <em>é</em> o produto. Significa o conjunto
+  mínimo que não deixa ninguém procurando um gerenciador de pacotes na primeira
+  tarde: um navegador, um editor de texto, visualizadores de imagens e
+  documentos, gerenciador de arquivos compactados, calculadora e monitor de
+  processos, mais as ferramentas de rede para as quais este desktop costuma
+  existir — nmap, dig, iperf3, tcpdump, mtr, sngrep e um cliente OpenVPN. Git
+  também está lá, porque todo mundo clona alguma coisa.</p>
+
+  <p><b>Full</b> soma LibreOffice, Firefox, GIMP, Wireshark, um ambiente de
+  compilação e Go, e em máquinas Intel também Steam e Wine.</p>
+
+  <p>Go estar na full e não na lite é de propósito, mesmo este projeto sendo
+  escrito em Go. Um toolchain são 250 MB para quem nunca vai digitar
+  <code>go</code>, e «todo mundo clona alguma coisa» é uma afirmação que se
+  sustenta para o <code>git</code> e não para um compilador.</p>
+
+  <div class="note">
+    <b>Full contém lite</b>
+    <p>Full é construída sobre lite, e não ao lado, então tudo o que está numa
+    está na outra. Além disso as duas compartilham quase todo o armazenamento:
+    uma máquina que já tem lite baixa só a diferença.</p>
+  </div>
+
+  <h3 id="whats-installed-menu">Encontrar as coisas</h3>
+  <p>O menu é agrupado pelo que você quer fazer. Terminal, Navegador, Arquivos e
+  Editor de texto ficam no topo porque são o que se abre toda sessão;
+  <b>Acessórios</b>, <b>Rede</b> e <b>Ferramentas do sistema</b> guardam o resto,
+  e <b>Todos os aplicativos</b> lista tudo que está instalado.</p>
+
+  <p>As entradas de linha de comando dentro de Rede abrem um terminal com a
+  sintaxe da ferramenta já impressa, para você não ter que ir procurar os
+  parâmetros antes.</p>
+
+  <h3 id="whats-installed-vpn">Conectar a uma VPN</h3>
+  <p><b>Rede → VPN</b> pede um perfil <code>.ovpn</code> e conecta. Os perfis
+  guardados em <code>~/.openvpn</code> são oferecidos diretamente, e a home
+  sobrevive a reinícios: uma conexão configurada uma vez continua
+  configurada.</p>
+  <p>Isso exige que o contêiner tenha sido iniciado com dispositivo de túnel e
+  privilégios de rede. Se não tiver, a caixa de diálogo avisa e mostra as duas
+  linhas que faltam, em vez de falhar em silêncio.</p>
+
+  <h3 id="whats-installed-region">Relógio e teclado</h3>
+  <p>Os dois são definidos quando o desktop inicia, então uma única imagem serve
+  para qualquer região. O relógio segue <code>TZ</code> — qualquer nome padrão,
+  por exemplo <code>America/Argentina/Buenos_Aires</code> — e o teclado segue
+  <code>KEYBOARD_LAYOUT</code>: <code>us</code>, <code>es</code> para a Espanha,
+  <code>latam</code> para a América Latina, e assim por diante.</p>
+  <p>Se algum estiver escrito errado, é avisado e ignorado em vez de ficar
+  aplicado pela metade. Um relógio rodando em UTC em silêncio por causa de um
+  erro de digitação é pior do que um que avisa.</p>
+</section>
+
+<section id="troubleshooting" data-track="use">
+  <h2>Quando algo não funciona</h2>
+
+  <h3 id="trouble-stream">Nada chega ao VLC</h3>
+  <p>Quase sempre é uma de três coisas. Verifique nesta ordem:</p>
+  <ol>
+    <li>O VLC não está mesmo escutando. <code>lsof -nP -iUDP:5000</code> tem que
+      mostrar <code>UDP *:5000</code>. Uma porta alta aleatória significa que
+      ele está chamando para fora, não escutando — faltou o <code>@</code>.</li>
+    <li>O endereço aponta para um lugar que o contêiner não alcança. De dentro
+      do Docker, <code>localhost</code> é o próprio contêiner, e um endereço do
+      host que caia em <code>172.17.0.0/16</code> colide com a ponte do próprio
+      Docker.</li>
+    <li>Você está usando <code>srt://</code> com o VLC. Veja
+      <a href="#stream-out-vlc">acima</a>.</li>
+  </ol>
+
+  <h3 id="trouble-stale">A interface não mudou depois de recompilar</h3>
+  <p>Deveria — o cliente é servido com um ETag sobre os próprios bytes, então o
+  navegador é obrigado a revalidar. Se mesmo assim persistir, confirme que o
+  contêiner foi recriado e não apenas reiniciado: <code>make up</code>
+  reconstrói a imagem.</p>
+
+  <h3 id="trouble-quality">A imagem está mole, ou atrasada</h3>
+  <p>Abra <b>Estatísticas</b>. Mostra o bitrate ao vivo, quadros, pacotes, o
+  quanto você está atrás do ao vivo, e um relógio com milissegundos — que é a
+  forma mais rápida de saber se dois navegadores estão realmente
+  sincronizados.</p>
+  <p>A causa habitual é codificar 1080p por software. Defina
+  <code>ENCODER=x264</code> se a detecção automática caiu em VP8, e veja se o
+  host tem uma GPU que valha a pena usar com <code>nvenc</code> ou
+  <code>vaapi</code>.</p>
+
+  <h3 id="trouble-keyboard">As teclas não chegam à área de trabalho</h3>
+  <p>Olhe o painel de presença: só o participante que tem o controle envia
+  entrada. E se houver uma janela da camada de controle aberta, o teclado é
+  dela, não da área de trabalho.</p>
+</section>

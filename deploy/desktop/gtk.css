@@ -1,0 +1,106 @@
+/* SentinelDesk
+ * A collaborative operating system for people and AI agents.
+ *
+ * Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+ *
+ * Licensed under the Apache License, Version 2.0.
+ *
+ * This product's name and logo are trademarks of Federico Pereira and are not
+ * covered by the license above. See the README for the trademark policy.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Scrollbars, on the palette everything else already uses.
+ *
+ * Asking for the dark Adwaita fixed the menu bars and left this behind: the
+ * trough stayed a pale grey, so every terminal and file manager on a near-black
+ * desktop had a light strip down its right edge. It was the last thing in a
+ * screenshot that did not belong.
+ *
+ * This lives in the user's config rather than in /etc/xdg beside settings.ini,
+ * and the asymmetry is GTK's, not a mistake: GTK3 reads settings.ini from the
+ * XDG config DIRS but only ever loads gtk.css from the user's own config
+ * directory. Shipping it through the skeleton is what gets it there.
+ *
+ * Square, like the window frames, and for the same reason — there is no
+ * compositor to round anything else, so rounding this one control would make it
+ * the odd one out rather than the polished one.
+ */
+
+scrollbar,
+scrollbar trough {
+  background-color: transparent;
+  border: none;
+}
+
+scrollbar slider {
+  /* The border is transparent and the background is clipped inside it, which is
+   * how a GTK slider is made narrower than the space it has to reserve: the
+   * track stays wide enough to hit with a pointer while the visible bar is a
+   * quiet 6px line. */
+  background-color: #3b4442;
+  border: 4px solid transparent;
+  background-clip: padding-box;
+  border-radius: 0;
+  min-width: 6px;
+  min-height: 32px;
+}
+
+scrollbar slider:hover {
+  background-color: #6b7671;
+}
+
+/* Dragging is the one moment the scrollbar is the thing being used, so it takes
+ * the phosphor accent — the same colour that means "live" everywhere else. */
+scrollbar slider:active {
+  background-color: #3FD68C;
+}
+
+/* The stepper arrows at each end. Off: they are two more pieces of chrome for a
+ * gesture nobody performs, and hiding them is what lets the bar read as a line
+ * rather than as a widget. */
+scrollbar button {
+  min-width: 0;
+  min-height: 0;
+  -gtk-icon-source: none;
+}
+
+/* The workspace switcher: quiet numerals, and the one you are ON in full
+ * phosphor — the ask was that the active workspace be unmissable, and a
+ * theme-grey pressed state is not that. Scoped through `.xfce4-panel grid`
+ * because the pager's buttons sit in a GtkGrid and the tasklist's do not:
+ * tested by putting debug orange on `grid button:checked` and watching only
+ * the pager take it. The `background` shorthand is deliberate — the dark
+ * theme paints checked buttons with a background-image gradient, and only
+ * the shorthand resets that too (background-color alone loses and nothing
+ * says why). */
+.xfce4-panel grid button {
+  color: #93a09a;
+  font-weight: bold;
+  /* Room to hit. The bare numerals drew targets a few pixels wide, and
+   * through a video stream — where the pointer lands with the stream's own
+   * imprecision — switching workspaces took several clicks and workspace 3
+   * took none. A wide pill is a target; a numeral is a label. */
+  padding: 0 11px;
+}
+.xfce4-panel grid button:checked {
+  background: #3fd68c;
+  color: #08130d;
+}
+
+/* Desktop icon labels: dark ink with a light lift. The wallpaper is light
+ * and the GTK theme is dark, so without this xfdesktop paints its labels
+ * white-on-white — same trap desktop_fg=#1d1d1d guarded against in the
+ * pcmanfm era, restated for its successor. */
+XfdesktopIconView.view {
+  color: #1d1d1d;
+  text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.85);
+  background: transparent;
+}
+XfdesktopIconView.view:active,
+XfdesktopIconView.view:selected {
+  color: #e7edea;
+  text-shadow: none;
+  background: #3fd68c;
+}

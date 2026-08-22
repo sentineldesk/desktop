@@ -1,0 +1,10 @@
+[Desktop Entry]
+# See sentineldesk-files.desktop for why these are files rather than `action=`
+# lines in the panel config, and why Icon is an absolute path.
+Type=Application
+Name=Web Browser
+Comment=Chromium, the browser the agent's browser_* tools drive
+Exec=chromium
+Icon=/usr/share/icons/Papirus/24x24/apps/chromium.svg
+Terminal=false
+Categories=Network;WebBrowser;

@@ -1,0 +1,138 @@
+# SentinelDesk — Openbox theme matching the browser control layer.
+#
+# The window frames used to be a light PIXEL-style theme, which sat oddly next
+# to the dark instrument rail floating over them. These are the same tokens:
+# #0d1110 surfaces, #93A09A dimmed text, #E7EDEA ink, #3FD68C for anything live.
+#
+# THERE IS NO COMPOSITOR, AND THAT IS THE DESIGN.
+#
+# Openbox draws no rounded corners and no drop shadows; both need a compositor,
+# and picom was measured here rather than assumed. Its own cost is nothing —
+# 6.8% of a core at its peak — but it makes Xvfb composite offscreen pixmaps in
+# software, and Xvfb went from 31% to 81% of a core while a window was being
+# dragged. On this machine the encoder never noticed. On a two-core deployment
+# it would, and the one thing that may not degrade is the stream.
+#
+# So the geometry is square on purpose. Not a rounded design with the corners
+# filed off — a square one: hard 1px edges, generous padding, a centred title,
+# and buttons that are geometric marks rather than imitation gloss. What Apple
+# is actually good at is restraint and rhythm, and neither of those needs a
+# compositor. The corners were the only part that did.
+
+border.width: 1
+padding.width: 12
+padding.height: 9
+window.handle.width: 0
+window.client.padding.width: 0
+window.client.padding.height: 0
+
+# A hairline, dark enough to separate the window from a busy wallpaper without
+# drawing a frame around everything.
+window.active.border.color: #2f3936
+window.inactive.border.color: #1e2523
+
+window.active.title.bg: flat solid
+window.active.title.bg.color: #141917
+window.inactive.title.bg: flat solid
+window.inactive.title.bg.color: #101413
+
+# The title is information, not decoration: dimmed when the window is not the
+# one being used, so the focused window is obvious at a glance.
+#
+# Left-justified since the buttons moved right (2026-08-20) — the reference's
+# own arrangement, and the honest one: a title centred in the space three
+# right-hand buttons leave drifts left of true centre by half the cluster,
+# and a title that is ALMOST centred reads as a bug where one that commits
+# to a side reads as a choice.
+window.active.label.bg: parentrelative
+window.active.label.text.color: #E7EDEA
+window.active.label.text.justify: left
+window.inactive.label.bg: parentrelative
+window.inactive.label.text.color: #6b7671
+window.inactive.label.text.justify: left
+
+# The buttons: Chromium's, moved onto every window at the owner's request
+# (2026-08-20). Thin ink glyphs — a bar, a square, an X — that sit quiet on
+# the titlebar until the pointer arrives, and then light a solid "bubble"
+# behind the one under it: grey for iconify and maximise, the alarm red for
+# close, white glyph on both. The traffic lights this replaced are in git if
+# anyone misses them; what the bubbles buy over the discs is that the hover
+# answers WHICH button the pointer is on, which through a video stream is
+# worth more than the colour-coded resting state was.
+#
+# Two mechanics carry it, both learned on the traffic lights:
+#
+#   per-button keys    The undocumented window.active.button.NAME.STATE.*
+#                      form (visible in libobrender's format strings) is what
+#                      lets close hover red while its neighbours hover grey.
+#   one mask per name  Openbox falls back to NAME.xbm when NAME_hover.xbm is
+#                      absent. The punched per-state masks are deliberately
+#                      gone: the glyph IS the button in every state, and only
+#                      the colours behind and inside it change.
+#
+# Openbox draws these backgrounds square — the bubble's rounding needs a
+# compositor this desktop deliberately does not run — and square is already
+# this theme's whole geometry, so the borrow lands as a native.
+window.active.button.unpressed.bg: parentrelative
+window.active.button.unpressed.image.color: #93A09A
+window.active.button.hover.bg: flat solid
+window.active.button.hover.bg.color: #2a3230
+window.active.button.hover.image.color: #E7EDEA
+window.active.button.pressed.bg: flat solid
+window.active.button.pressed.bg.color: #1d2422
+window.active.button.pressed.image.color: #E7EDEA
+window.active.button.disabled.bg: parentrelative
+window.active.button.disabled.image.color: #3b4442
+
+window.active.button.close.hover.bg: flat solid
+window.active.button.close.hover.bg.color: #E05252
+window.active.button.close.hover.image.color: #FFFFFF
+window.active.button.close.pressed.bg: flat solid
+window.active.button.close.pressed.bg.color: #B84343
+window.active.button.close.pressed.image.color: #FFFFFF
+
+# An unfocused window dims its glyphs. Same rationale the lights had: with
+# several windows open, the legible set marks the one being worked in.
+window.inactive.button.unpressed.bg: parentrelative
+window.inactive.button.pressed.bg: flat solid
+window.inactive.button.pressed.bg.color: #1d2422
+window.inactive.button.hover.bg: flat solid
+window.inactive.button.hover.bg.color: #232a28
+window.inactive.button.disabled.bg: parentrelative
+window.inactive.button.unpressed.image.color: #454f4c
+window.inactive.button.hover.image.color: #93A09A
+window.inactive.button.pressed.image.color: #93A09A
+window.inactive.button.disabled.image.color: #2b3331
+
+menu.border.color: #2f3936
+menu.border.width: 1
+menu.overlap.x: -2
+
+menu.title.bg: flat solid
+menu.title.bg.color: #141917
+menu.title.text.color: #93A09A
+menu.title.text.justify: left
+
+menu.items.bg: flat solid
+menu.items.bg.color: #101413
+menu.items.text.color: #E7EDEA
+menu.items.disabled.text.color: #4d5754
+menu.items.active.bg: flat solid
+menu.items.active.bg.color: #3FD68C
+menu.items.active.text.color: #052B17
+menu.separator.color: #2a3230
+menu.separator.width: 1
+menu.separator.padding.width: 6
+menu.separator.padding.height: 3
+
+# The on-screen display: the box shown while moving or resizing a window.
+osd.bg: flat solid
+osd.bg.color: #101413
+osd.border.color: #2f3936
+osd.border.width: 1
+osd.label.bg: parentrelative
+osd.label.text.color: #E7EDEA
+osd.hilight.bg: flat solid
+osd.hilight.bg.color: #3FD68C
+osd.unhilight.bg: flat solid
+osd.unhilight.bg.color: #2a3230

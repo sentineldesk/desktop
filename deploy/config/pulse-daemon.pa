@@ -1,0 +1,18 @@
+# SentinelDesk
+# A collaborative operating system for people and AI agents.
+#
+# Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+#
+# Licensed under the Apache License, Version 2.0.
+#
+# This product's name and logo are trademarks of Federico Pereira and are not
+# covered by the license above. See the README for the trademark policy.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+#!/usr/bin/pulseaudio -nF
+# A virtual sink: applications play into it and GStreamer captures
+# sentineldesk.monitor.
+load-module module-native-protocol-unix
+load-module module-null-sink sink_name=sentineldesk sink_properties=device.description=VirtualDesktop
+set-default-sink sentineldesk

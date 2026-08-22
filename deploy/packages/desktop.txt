@@ -1,0 +1,280 @@
+# SentinelDesk — packages for the LITE image (the default).
+#
+# One package per line, # for comments, blank lines ignored. The Dockerfile
+# feeds this straight to apt, so editing what the desktop ships means editing a
+# list — no build syntax, no rebuilding a mental model of a RUN instruction
+# split over forty lines.
+#
+# "Lite" does not mean headless. The desktop IS the product; lite means the
+# smallest set that leaves nobody reaching for apt on their first afternoon.
+# Anything that costs more than about 50 MB and serves a minority belongs in
+# full.txt instead.
+#
+# Sizes below are measured, not guessed: apt-cache Installed-Size summed over
+# the package and everything it drags in.
+
+# ── Shell ─────────────────────────────────────────────────────────────────────
+# xfce4-panel replaced lxpanel on 2026-08-19, and xfdesktop replaced pcmanfm's
+# desktop mode with it. The trade was measured in a throwaway container first:
+# same Openbox, same theme, same wallpaper — what changed is what the panel can
+# DO. Whisker is the searchable menu, the pager makes the four workspaces
+# Openbox always had visible (numbered, the active one in phosphor — see
+# gtk.css), and xfdesktop is the only member of this family that can hang a
+# different wallpaper on each workspace, which is why the desktop icons moved
+# there too. Everything here is GTK, so the whole shell stays readable
+# through AT-SPI — the golden rule this desktop is built on.
+xfce4-panel
+xfce4-whiskermenu-plugin
+xfdesktop4
+librsvg2-bin
+
+# ── File manager ──────────────────────────────────────────────────────────────
+# Thunar finished the move the panel started (2026-08-20): pcmanfm's desktop
+# mode retired on the 19th, and now the application followed, so every piece
+# of the shell comes from the same XFCE family. Tried in a throwaway
+# container first, like the panel was: Thunar reads the same GTK bookmarks
+# this image seeds and wears the same cyan Papirus folders, and it adds what
+# pcmanfm structurally could not — a second pane (F3, the Midnight Commander
+# view), a configurable toolbar, bulk rename, custom actions. Still GTK, so
+# AT-SPI reads every row and button of it.
+thunar
+# Thunar draws no thumbnails itself; it asks tumbler over D-Bus. Both are
+# Recommends, and --no-install-recommends silently drops those — without
+# these two lines every folder of recordings is a wall of identical icons
+# and nothing in any log says why. plugins-extra carries the video
+# thumbnailers; the GStreamer they lean on is already in this image, because
+# streaming is the product.
+tumbler
+tumbler-plugins-extra
+# The wastebasket, or rather the machinery under it: trash:// is a gvfs
+# backend, and without the daemons a "deleted" file is GONE — Thunar hides
+# the Trash from its sidebar, xfdesktop cannot draw the desktop icon its
+# config already asks for (show-trash was true all along), and every delete
+# is permanent on a desktop shared with an agent. A shared desktop deserves
+# an undo pile more than most.
+gvfs
+# gio, the CLI over the same machinery — how a script or the agent reads or
+# empties the wastebasket (`gio trash --list`), and the probe that says in
+# one line whether the backend is alive at all.
+libglib2.0-bin
+
+# Notifications: the daemon plus its panel bell. libnotify-bin brings
+# notify-send, so shell scripts (and the agent) can raise a toast a person
+# actually sees.
+xfce4-notifyd
+libnotify-bin
+
+# The panel's indicators and widgets, chosen deliberately (2026-08-19):
+#   pulseaudio  volume in the tray — the room already runs PulseAudio
+#   clipman     clipboard history, kept in a file the agent can read
+#   cpugraph    live CPU in the panel
+#   xkb         keyboard layout indicator, in text mode
+#   genmon      the SentinelDesk status line: ● REC, agent jobs — the panel
+#               speaking this product's own language via sentineldesk-status.sh
+#   eyes        two eyes following the pointer; on a desktop with a human AND
+#               an agent pointer, they earn their two hundred kilobytes
+xfce4-pulseaudio-plugin
+xfce4-clipman-plugin
+xfce4-cpugraph-plugin
+xfce4-xkb-plugin
+xfce4-genmon-plugin
+xfce4-eyes-plugin
+
+# Desktop widgets. conky draws the system card (clock, CPU, RAM, disk) as a
+# dark panel-coloured card — no compositor here, so it commits to a surface
+# colour instead of faking glass. xpad is sticky notes that persist as plain
+# files under ~/.config/xpad, which is the golden rule applied to a widget:
+# what you jot down, the agent can read.
+conky-all
+xpad
+
+# ── Theme, icons, fonts ───────────────────────────────────────────────────────
+adwaita-icon-theme
+papirus-icon-theme
+fonts-roboto
+fonts-noto-core
+# The terminal's face, and the launcher's. Chosen over the stock Monospace for
+# the hours people actually spend reading a shell on this desktop; the window
+# titles stay on the generic monospace alias on purpose (rc.xml sets them), so
+# a font package that ever went missing would degrade quietly, not blankly.
+fonts-jetbrains-mono
+
+# ── Launcher ──────────────────────────────────────────────────────────────────
+# Keyboard-first application palette (Super+Space, and the panel's Run entry).
+# It lists the same trusted /usr/share/applications set the panel does — see
+# deploy/desktop/rofi.rasi for why this invents nothing the agent cannot see.
+rofi
+
+# The gdk-pixbuf SVG loader, and the reason the two themes above are visible at
+# all. Papirus is SVG from end to end; without this loader GTK draws every one
+# of its icons as the same placeholder diamond — a panel where the menu button,
+# the launchers and every menu entry are identical blue lozenges — while every
+# file the icons live in is exactly where it belongs and no log says anything.
+#
+# It is named HERE, beside the themes it makes usable, and not only in the
+# Dockerfile and the installer's engine list where it also appears. This file is
+# what claims to describe the desktop: anything that builds a desktop from it
+# alone — which is what the list is for — otherwise gets one with no icons.
+librsvg2-common
+
+# ── Core applications ─────────────────────────────────────────────────────────
+chromium
+lxterminal
+zenity
+dbus-x11
+
+# Mail, in lite by explicit decision (2026-08-19) although its ~240 MB is far
+# past this file's fifty-megabyte rule of thumb: a work desktop without a mail
+# client sends people back to their own machine, which is the trip this product
+# exists to remove. Gecko exposes AT-SPI like Firefox does, so the agent reads
+# it the same way it reads everything else.
+thunderbird
+
+# Media player. Doubles as a way to test the upstream audio path: VLC can
+# record from the virtual microphone the browser publishes.
+vlc
+
+# ── Remote access, outbound ───────────────────────────────────────────────────
+# This desktop is often the jump host, not the destination.
+#
+# Remmina is the client a person actually clicks: one GUI for RDP, VNC, SSH and
+# SPICE, with a connection manager, saved profiles and passwords kept in the
+# keyring (remmina-plugin-secret). It is what the menu offers, because the raw
+# CLIs below open with no server and quit — a menu icon that does nothing. The
+# CLIs stay installed underneath: freerdp3-x11 provides the FreeRDP library
+# Remmina's RDP plugin loads, and both remain reachable from a terminal for
+# scripting and jump-host use. Their own menu entries are hidden in the
+# Dockerfile so the desktop has one obvious way in.
+remmina
+remmina-plugin-rdp
+remmina-plugin-vnc
+remmina-plugin-secret
+tigervnc-viewer
+freerdp3-x11
+
+# ── Graphics ──────────────────────────────────────────────────────────────────
+libgl1-mesa-dri
+mesa-vulkan-drivers
+# 1.6 MB, and it answers "is acceleration actually working, or am I on
+# llvmpipe?" — the first question anybody asks when the video looks slow.
+vulkan-tools
+
+# ── Desktop utilities ─────────────────────────────────────────────────────────
+# A desktop with no text editor and no image viewer is a demo. These are the
+# LXDE-family versions: they match the shell, start instantly, and together
+# cost less than one GNOME application would.
+mousepad                  # 16.8 MB · text editor with tabs and highlighting
+# A second video thumbnailer, the freedesktop-spec one: it ships the
+# /usr/share/thumbnailers entry that tumbler's desktop plugin (and any other
+# spec-speaking viewer) resolves, and its CLI makes "give me a frame of this
+# recording" a one-liner in a shell or an agent job.
+ffmpegthumbnailer         #  1.0 MB
+gpicview                  #  0.6 MB · image viewer
+xarchiver                 #  1.7 MB · archives, graphically
+galculator                #  1.7 MB · calculator
+lxtask                    #  0.4 MB · task manager
+
+# Two PDF readers on purpose: evince is the one people expect and it copes with
+# a scanned, form-bearing, badly-made file; zathura opens instantly and is what
+# you want for the fifth manual of the afternoon. zathura needs the poppler
+# plugin to open anything at all — without it the window comes up empty.
+evince                    # 43.3 MB
+zathura                   # 33.8 MB
+zathura-pdf-poppler
+
+# ── Network and diagnosis ─────────────────────────────────────────────────────
+# This desktop exists to reach other machines, so the tools for finding out why
+# it cannot are not an extra.
+iputils-ping              #  0.2 MB
+net-tools                 #  1.0 MB
+nmap                      # 27.2 MB · the biggest of the group, and the one
+                          #           people open the terminal for
+dnsutils                  # 10.2 MB · dig, nslookup
+traceroute                #  0.2 MB
+mtr-tiny                  #  0.3 MB
+iperf3                    #  0.4 MB · earns its place twice over on a product
+                          #           whose whole pitch is throughput
+tcpdump                   #  1.7 MB
+socat                     #  1.8 MB
+whois                     #  0.4 MB
+sngrep                    #  0.3 MB · SIP call flow off the wire
+
+# OpenVPN, console plus the openvpn-connect launcher. Needs /dev/net/tun and
+# CAP_NET_ADMIN, which the compose files grant.
+#
+# NOT wireguard: that package is 118 MB of dracut, initramfs-tools and kmod —
+# kernel-module machinery that cannot do anything inside a container.
+openvpn                   #  2.1 MB
+
+# ── Terminal ──────────────────────────────────────────────────────────────────
+# The short list whose absence stops a session dead: no pager, no way to open
+# an archive, no editor over SSH.
+less
+tree
+ncdu
+pv
+jq
+rsync
+unzip
+zip
+p7zip-full
+vim
+tmux
+
+# Listed explicitly because they used to arrive as a dependency of
+# steam-installer. Removing Steam took them with it, and a desktop that cannot
+# fetch a file is missing something nobody thinks to check for until they need
+# it.
+curl
+wget
+
+# 99.4 MB, most of it Perl. It earns that on a desktop people are meant to work
+# in rather than only look at.
+git
+
+
+# ── From Raspberry Pi OS's own base, and worth the same here ──────────────────
+# Checked against pi-gen stage2 and the rpd-* meta-packages. These are the ones
+# whose absence a person notices within an hour, and together they cost about
+# what one icon theme does.
+bash-completion           #  1.9 MB · tab completion; the terminal stops fighting back
+man-db                    #  7.8 MB · a desktop full of tools and no way to read
+                          #           their manuals is half a desktop
+psmisc                    #  0.9 MB · killall, pstree, fuser
+usbutils                  #  0.3 MB · lsusb
+strace                    #  3.0 MB · what is that process actually doing
+ethtool                   #  0.8 MB · link speed, duplex, driver — the layer below ping
+
+# ffmpeg is in Raspberry Pi's graphics set and belongs here for a sharper
+# reason: this product records and streams, and ffmpeg is how you inspect,
+# convert or repair what it produced without leaving the desktop.
+ffmpeg                    #  3.0 MB
+
+# Screenshots from a script. The rail and the MCP already take them
+# interactively; this is the one you call from a shell loop.
+scrot                     #  0.1 MB
+
+# mDNS, so machines on the LAN answer to name.local. Worth having on a desktop
+# whose job is often to reach the other machines on its network.
+avahi-daemon              #  0.6 MB
+
+# Mounting what other people hand you: NTFS disks and SMB shares.
+ntfs-3g                   #  3.8 MB
+cifs-utils                #  0.9 MB
+
+# pip, because a Python tool is a common answer to "can you also…".
+python3-pip               # 10.3 MB
+
+# update-desktop-database, which builds /usr/share/applications/mimeinfo.cache.
+# A Recommends of the desktop packages, so --no-install-recommends leaves it out
+# and the image ships without the cache that maps MIME types to applications.
+desktop-file-utils        #  0.1 MB
+
+# xrandr, xset and friends. desktop-init.sh asks xrandr for the output name
+# the wallpaper backdrop is keyed on, instead of trusting a hardcoded "screen".
+x11-xserver-utils
+
+# ── Localisation ──────────────────────────────────────────────────────────────
+# Read at start from TZ and KEYBOARD_LAYOUT, so one image serves every region.
+tzdata
+xkb-data

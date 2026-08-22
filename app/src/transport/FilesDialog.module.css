@@ -1,0 +1,436 @@
+/* SentinelDesk
+ * A collaborative operating system for people and AI agents.
+ *
+ * Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+ *
+ * Licensed under the Apache License, Version 2.0.
+ *
+ * This product's name and logo are trademarks of Federico Pereira and are not
+ * covered by the license above. See the README for the trademark policy.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* The Midnight Commander homage, transcribed from the embedded client:
+ * two panes, the remote side in the drive accent, the local side in amber,
+ * a keycap row at the bottom. Monospace where the columns are, because
+ * columns of sizes and dates are what monospace is FOR. */
+
+/* No dark wash: the desktop stays fully visible behind the manager, and a
+ * click out there is ignored rather than fatal — the ✕ is the only way out. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.window {
+  position: relative; /* the query box anchors to the window, not the page */
+  display: flex;
+  flex-direction: column;
+  width: min(980px, 100%);
+  height: min(640px, 92vh);
+  border-radius: 12px;
+  background: #141821;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  color: #e8e6e1;
+  overflow: hidden;
+}
+
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.1);
+}
+
+.tt {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sub {
+  font-size: 11px;
+  color: #9a958c;
+}
+
+.close {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: #9a958c;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.close:hover {
+  color: #e8e6e1;
+}
+
+.panes {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 44px 1fr;
+  padding: 10px;
+  min-height: 0;
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.paneHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 10px;
+  background: rgb(255 255 255 / 0.04);
+  border-bottom: 1px solid rgb(255 255 255 / 0.1);
+}
+
+.side {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.sideRemote {
+  color: #2fbf71;
+}
+
+.sideLocal {
+  color: #f9c74f;
+}
+
+.cwd {
+  font-size: 11px;
+  color: #9a958c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.colhead,
+.list li {
+  display: grid;
+  grid-template-columns: 1fr 82px 150px;
+  gap: 16px;
+  padding: 3px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.colhead {
+  padding: 5px 10px;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #9a958c;
+  border-bottom: 1px solid rgb(255 255 255 / 0.1);
+  font-family: inherit;
+}
+
+.colhead span:nth-child(2),
+.colhead span:nth-child(3) {
+  text-align: right;
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.list li {
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.list li span:nth-child(2),
+.list li span:nth-child(3) {
+  text-align: right;
+  color: #9a958c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dir .nm {
+  font-weight: 700;
+}
+
+.up .nm {
+  color: #2fbf71;
+}
+
+.selRow {
+  background: #2fbf71;
+}
+
+.selRow .nm,
+.selRow span {
+  color: #08130d !important;
+}
+
+/* The local pane selects in its own colour — amber, like its header — so a
+ * glance still answers which side the next F5/◀ will act on. */
+.selLocal {
+  background: #f9c74f;
+}
+
+.selLocal .nm,
+.selLocal span {
+  color: #131107 !important;
+}
+
+/* The folder picker, in the pane's own amber. */
+.pick {
+  margin-left: auto;
+  flex: none;
+  padding: 2px 9px;
+  border: 1px solid rgb(249 199 79 / 0.5);
+  border-radius: 4px;
+  background: none;
+  color: #f9c74f;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pick:hover {
+  background: rgb(249 199 79 / 0.12);
+}
+
+/* The manager's own query box — what window.prompt/confirm used to be,
+ * drawn in MC's register: a centred box over the panes, green for a
+ * question, red-edged for a deletion. */
+.ask {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: rgb(10 12 16 / 0.5);
+}
+
+.askBox {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(420px, 90%);
+  padding: 14px 16px;
+  border: 1px solid #2fbf71;
+  border-radius: 8px;
+  background: #141821;
+}
+
+.askDanger {
+  border-color: #e05252;
+}
+
+.askTitle {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.askInput {
+  padding: 7px 10px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 6px;
+  background: #0f131b;
+  color: #e8e6e1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.askInput:focus {
+  outline: none;
+  border-color: #2fbf71;
+}
+
+.askRow {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.askRow button {
+  padding: 5px 16px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.askOk {
+  border: 1px solid #2fbf71;
+  background: #2fbf71;
+  color: #08130d;
+}
+
+.askDanger .askOk {
+  border-color: #e05252;
+  background: #e05252;
+  color: #fff;
+}
+
+.askCancel {
+  border: 1px solid rgb(255 255 255 / 0.16);
+  background: none;
+  color: #e8e6e1;
+}
+
+.askCancel:hover {
+  background: rgb(255 255 255 / 0.06);
+}
+
+.list li:hover:not(.selRow):not(.plain):not(.plainDim) {
+  background: rgb(255 255 255 / 0.06);
+}
+
+.plain,
+.plainDim {
+  cursor: default;
+}
+
+.plainDim {
+  color: #9a958c;
+}
+
+.err {
+  color: #e05252;
+  cursor: default;
+}
+
+.foot {
+  padding: 6px 10px;
+  border-top: 1px solid rgb(255 255 255 / 0.1);
+  font-size: 10.5px;
+  color: #9a958c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.mid button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 6px;
+  background: none;
+  color: #9a958c;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.mid button:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.06);
+  color: #e8e6e1;
+}
+
+.mid button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.paneDrop {
+  border-color: #f9c74f;
+  background: rgb(249 199 79 / 0.08);
+}
+
+.localHint {
+  padding: 9px 10px;
+  border-top: 1px dashed rgb(255 255 255 / 0.16);
+  font-size: 11px;
+  color: #9a958c;
+}
+
+.localHint b {
+  color: #f9c74f;
+}
+
+.progress {
+  height: 3px;
+  background: rgb(255 255 255 / 0.1);
+}
+
+.progress > div {
+  height: 100%;
+  width: 0;
+  background: #2fbf71;
+  transition: width 0.15s;
+}
+
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid rgb(255 255 255 / 0.1);
+}
+
+.keys button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 90px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #e8e6e1;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.keys button:hover {
+  background: rgb(255 255 255 / 0.06);
+}
+
+.keys button b {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 4px;
+  color: #9a958c;
+}

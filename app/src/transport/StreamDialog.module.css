@@ -1,0 +1,245 @@
+/* SentinelDesk
+ * A collaborative operating system for people and AI agents.
+ *
+ * Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+ *
+ * Licensed under the Apache License, Version 2.0.
+ *
+ * This product's name and logo are trademarks of Federico Pereira and are not
+ * covered by the license above. See the README for the trademark policy.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* The stream dialog, styled after the embedded client's rs-window: the four
+ * destinations are TILES with their logos, not text chips, because the logo
+ * is how somebody recognises "that one" faster than reading. */
+
+/* Its own overlay, NOT MediaSettings' shared one: same centring, but no
+ * dark wash and no blur — the desktop stays fully visible behind the
+ * window, and a click out there is ignored rather than fatal (the ✕ is the
+ * only way out; see the dialog's comment). */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  color: #9a958c;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.platforms {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.platform {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 6px 10px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 10px;
+  background: transparent;
+  color: #9a958c;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.platform:hover {
+  border-color: rgb(255 255 255 / 0.34);
+  color: #e8e6e1;
+}
+
+.platformOn {
+  border-color: #2fbf71;
+  color: #e8e6e1;
+  background: rgb(47 191 113 / 0.1);
+}
+
+.logo {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+}
+
+.logo svg {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Each platform's brand colour, once its tile is chosen — the logos read as
+ * themselves instead of four grey marks. */
+.platformOn:nth-child(1) .logo { color: #ff0000; }
+.platformOn:nth-child(2) .logo { color: #a970ff; }
+.platformOn:nth-child(3) .logo { color: #1877f2; }
+.platformOn:nth-child(4) .logo { color: #2fbf71; }
+
+/* The play-button cutout in the YouTube mark: the dialog's own surface, so
+ * the triangle looks punched out rather than painted on. */
+.cut {
+  fill: #141821;
+  stroke: none;
+}
+
+.name {
+  line-height: 1.2;
+}
+
+.input {
+  padding: 9px 11px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 8px;
+  background: #0f131b;
+  color: #e8e6e1;
+  font-size: 13px;
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  color: #9a958c;
+  overflow-wrap: anywhere;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  background: transparent;
+  color: #e8e6e1;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.box {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 4px;
+  background: #0f131b;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.boxOn {
+  border-color: #2fbf71;
+  background: #2fbf71;
+  color: #08130d;
+}
+
+.active {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgb(224 82 82 / 0.45);
+  border-radius: 10px;
+  background: rgb(224 82 82 / 0.08);
+}
+
+.activeHead {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9a958c;
+}
+
+.activeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.liveDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e05252;
+  flex: none;
+}
+
+.activeName {
+  font-size: 13px;
+  color: #e8e6e1;
+  flex: none;
+}
+
+.activeUrl {
+  font-size: 12px;
+  color: #9a958c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.stop {
+  margin-left: auto;
+  flex: none;
+  padding: 5px 12px;
+  border: 1px solid #e05252;
+  border-radius: 999px;
+  background: transparent;
+  color: #e05252;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.stop:hover {
+  background: #e05252;
+  color: #fff;
+}
+
+.msg {
+  margin-right: auto;
+  align-self: center;
+  font-size: 12px;
+  color: #9a958c;
+  overflow-wrap: anywhere;
+}
+
+.msgBad {
+  color: #e05252;
+}
+
+.help {
+  font-size: 12px;
+  color: #2fbf71;
+  text-decoration: none;
+  width: fit-content;
+}
+
+.help:hover {
+  text-decoration: underline;
+}

@@ -1,0 +1,52 @@
+#!/bin/sh
+# OpenVPN client with a profile picker
+#
+# The GUI Debian offers is network-manager-openvpn-gnome, which needs
+# NetworkManager running to do anything. Nothing manages the network in this
+# container, so that package would install a menu entry that opens a window
+# that cannot connect — the same trap as a menu item for software that is not
+# there. This is the same shape as vnc-connect and rdp-connect instead: a
+# dialog, then the real binary.
+#
+# The profile lives in the persistent home, so it survives a restart of the
+# container the way a saved connection should.
+
+DIR="$HOME/.openvpn"
+mkdir -p "$DIR"
+
+# Anything the person already dropped in, plus the option of picking a file
+# from somewhere else. Listing what is there first is the difference between a
+# client you set up once and one you re-navigate every time.
+set -- "$DIR"/*.ovpn
+if [ -e "$1" ]; then
+    list=""
+    for f in "$@"; do list="$list$(basename "$f")|"; done
+    choice=$(zenity --list --title="OpenVPN" \
+        --text="Profile to connect with:" \
+        --column="Profile" $(printf '%s' "$list" | tr '|' ' ') \
+        --extra-button="Choose a file…" 2>/dev/null) || exit 0
+    case "$choice" in
+        "Choose a file…"|"") profile="" ;;
+        *) profile="$DIR/$choice" ;;
+    esac
+else
+    profile=""
+fi
+
+if [ -z "$profile" ]; then
+    profile=$(zenity --file-selection --title="OpenVPN profile (.ovpn)" \
+        --file-filter="OpenVPN | *.ovpn *.conf" 2>/dev/null) || exit 0
+    [ -z "$profile" ] && exit 0
+fi
+
+# Root, because bringing up a tunnel means creating an interface and writing
+# routes. The container grants CAP_NET_ADMIN and /dev/net/tun for exactly this;
+# without them openvpn starts and then fails on the first ifconfig, which is
+# worth saying plainly rather than leaving in the log.
+if [ ! -c /dev/net/tun ]; then
+    zenity --error --title="OpenVPN" \
+        --text="No /dev/net/tun in this container.\n\nAdd it to the compose file:\n\n  devices:\n    - /dev/net/tun\n  cap_add:\n    - NET_ADMIN" 2>/dev/null
+    exit 1
+fi
+
+exec lxterminal -e sh -c "echo 'openvpn — Ctrl+C to disconnect'; echo; sudo -n openvpn --config '$profile'; echo; echo 'disconnected.'; exec bash"

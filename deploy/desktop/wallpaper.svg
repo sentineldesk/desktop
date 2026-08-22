@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SentinelDesk
+     A collaborative operating system for people and AI agents.
+
+     Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+
+     Licensed under the Apache License, Version 2.0.
+
+     This product's name and logo are trademarks of Federico Pereira and are not
+     covered by the license above. See the README for the trademark policy.
+
+     SPDX-License-Identifier: Apache-2.0
+
+     The built-in wallpaper: what a room shows before a deployment mounts its
+     own into /wallpaper (ROOM_WALLPAPERS). Light grey ground, chosen over the
+     first near-black draft because the frames, the panel and the terminal are
+     already dark — a light backdrop is what makes them read as objects
+     SITTING on the desktop instead of dissolving into it, and the glass
+     panel's dark tint over it becomes actual smoked glass.
+
+     The greys carry the same faint green bias as the dark surfaces they live
+     with (#0d1110 is a green-black; these are green-whites), so the two
+     halves belong to one palette rather than two designs sharing a screen.
+
+     Still quiet, and still deliberately cheap to encode: static, low
+     contrast, no bright saturated field. The contour topography rising from
+     the lower right is the one gesture, in greys a step darker than the
+     ground; the single live dot keeps the phosphor accent — the only
+     saturated pixels on the image. Text is set in monospace deliberately: it
+     is the one font family the build stage is guaranteed to have when
+     rsvg-convert rasterises this at 1920x1080. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <radialGradient id="ground" cx="0.32" cy="0.28" r="1.15">
+      <stop offset="0" stop-color="#eef1ef"/>
+      <stop offset="0.55" stop-color="#e5e9e7"/>
+      <stop offset="1" stop-color="#d7dcda"/>
+    </radialGradient>
+    <!-- Tonal patches: radial fades to transparent, which banding treats far
+         more kindly than a blur filter and costs the rasteriser nothing. -->
+    <radialGradient id="patchDark" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#bcc5c1" stop-opacity="0.75"/>
+      <stop offset="0.7" stop-color="#bcc5c1" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#bcc5c1" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="patchLight" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#f7f9f8" stop-opacity="0.55"/>
+      <stop offset="0.7" stop-color="#f7f9f8" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#f7f9f8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="patchMid" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#c8d0cd" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#c8d0cd" stop-opacity="0"/>
+    </radialGradient>
+    <!-- The login's glow, verbatim: drop-shadow(0 0 6px rgba(63,214,140,.55)). -->
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#3FD68C" flood-opacity="0.55"/>
+    </filter>
+    <!-- A soft lift for dark type on a light ground — the letterforms were
+         going soft into the grey without it. -->
+    <filter id="lift" x="-20%" y="-40%" width="140%" height="180%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="2.5" flood-color="#3a423f" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#ground)"/>
+
+  <!-- Tonal weather: three soft patches so the ground carries more than one
+       grey without carrying an edge anywhere. -->
+  <circle cx="1550" cy="180" r="620" fill="url(#patchDark)"/>
+  <circle cx="380" cy="760" r="700" fill="url(#patchLight)"/>
+  <circle cx="1050" cy="980" r="520" fill="url(#patchMid)"/>
+
+  <!-- A constellation of rounds drifting down the upper-left diagonal —
+       rings and filled dots in the family of greys, echoing the contour
+       motif so the two corners answer each other. All quiet, all static. -->
+  <g fill="none" stroke="#8f9995" stroke-width="2">
+    <circle cx="210" cy="150" r="30" stroke-opacity="0.30"/>
+    <circle cx="452" cy="372" r="12" stroke-opacity="0.26"/>
+    <circle cx="700" cy="240" r="52" stroke-opacity="0.16"/>
+    <circle cx="332" cy="536" r="20" stroke-opacity="0.22"/>
+    <circle cx="906" cy="470" r="8" stroke-opacity="0.30"/>
+    <circle cx="580" cy="640" r="34" stroke-opacity="0.14"/>
+  </g>
+  <g fill="#8f9995">
+    <circle cx="330" cy="260" r="7" fill-opacity="0.30"/>
+    <circle cx="560" cy="120" r="4" fill-opacity="0.34"/>
+    <circle cx="640" cy="430" r="10" fill-opacity="0.20"/>
+    <circle cx="820" cy="330" r="5" fill-opacity="0.28"/>
+    <circle cx="240" cy="430" r="4" fill-opacity="0.32"/>
+    <circle cx="760" cy="580" r="6" fill-opacity="0.18"/>
+  </g>
+
+  <!-- Topography: concentric contours around a point past the lower-right
+       corner, so only their rising arcs enter the frame. Stroke opacity
+       climbs slightly toward the centre, the way real contour maps darken
+       toward a summit. -->
+  <g fill="none" stroke="#7d8884" stroke-width="2">
+    <circle cx="2080" cy="1240" r="920" stroke-opacity="0.10"/>
+    <circle cx="2080" cy="1240" r="820" stroke-opacity="0.13"/>
+    <circle cx="2080" cy="1240" r="720" stroke-opacity="0.16"/>
+    <circle cx="2080" cy="1240" r="620" stroke-opacity="0.19"/>
+    <circle cx="2080" cy="1240" r="520" stroke-opacity="0.22"/>
+    <circle cx="2080" cy="1240" r="430" stroke-opacity="0.25"/>
+    <circle cx="2080" cy="1240" r="350" stroke-opacity="0.28"/>
+    <circle cx="2080" cy="1240" r="280" stroke-opacity="0.31"/>
+  </g>
+
+  <!-- The summit the contours describe: one live dot, the only saturated
+       pixels on the image, sitting exactly on the r=520 arc. A shade deeper
+       than the dark theme's phosphor so it holds on a light ground. -->
+  <circle cx="1633" cy="974" r="4" fill="#2fae74" fill-opacity="0.9"/>
+
+  <!-- The brand lockup: the login's own logo — the monitor glyph from
+       components/Icons.tsx, same four rectangles, same colours (#3FD68C
+       frame, #0b0e14 screen, #2AA96C foot) — beside the wordmark, so the
+       desktop and the door people came through wear one mark. It lived in
+       the lower-left corner and the corner betrayed it: the backdrop is
+       drawn zoomed-to-fill, and a screen narrower than 16:9 crops the SIDES
+       — on a tablet the brand was simply gone, reported as missing. The
+       zoom never crops the bottom, so bottom-centre survives every aspect;
+       the owner asked for the bottom, and the maths agrees. Still (with the
+       summit dot) the only saturated ink on the image. -->
+  <g transform="translate(692,880) scale(1.9)" filter="url(#glow)">
+    <rect x="4" y="8" width="56" height="38" rx="6" fill="#3FD68C"/>
+    <rect x="10" y="14" width="44" height="26" rx="2" fill="#0b0e14"/>
+    <rect x="22" y="50" width="20" height="4" rx="2" fill="#3FD68C"/>
+    <rect x="16" y="54" width="32" height="4" rx="2" fill="#2AA96C"/>
+  </g>
+  <!-- The login sets the name in a bold sans, mixed case, beside the glyph;
+       the same lockup here, with the ink flipped dark because this ground is
+       light where the login's is night. Roboto is the desktop's own UI face
+       and is installed before this file is rasterised. -->
+  <text x="850" y="951" font-family="Roboto, DejaVu Sans, sans-serif"
+        font-size="58" font-weight="700" letter-spacing="0.5"
+        fill="#242b28" filter="url(#lift)">SentinelDesk</text>
+  <text x="853" y="990" font-family="Roboto, DejaVu Sans, sans-serif"
+        font-size="22" fill="#525c58" fill-opacity="0.85">people and AI agents, one desktop</text>
+</svg>

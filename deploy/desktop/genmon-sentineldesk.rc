@@ -1,0 +1,21 @@
+# SentinelDesk
+# A collaborative operating system for people and AI agents.
+#
+# Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+#
+# Licensed under the Apache License, Version 2.0.
+#
+# This product's name and logo are trademarks of Federico Pereira and are not
+# covered by the license above. See the README for the trademark policy.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# The genmon plugin's configuration. Genmon is the one panel plugin that keeps
+# its settings in an rc file rather than in xfconf (learned by watching the
+# mock show "(genmon)XXX" while perfectly valid xfconf properties sat unread),
+# so this ships to ~/.config/xfce4/panel/genmon-19.rc — the 19 matches the
+# plugin id in xfce4-panel.xml.
+Command=/usr/local/bin/sentineldesk-status.sh
+UseLabel=0
+Text=
+UpdatePeriod=2000

@@ -1,0 +1,62 @@
+# SentinelDesk — extra packages for the FULL image, every architecture.
+#
+# Installed ON TOP of desktop.txt, so this file holds only the difference:
+#
+#     make image-full        (or: docker build --target full …)
+#
+# What lands here rather than in lite: anything large, or serving a minority of
+# installations, or both. The rule of thumb is fifty megabytes — past that, a
+# package has to be something most people would miss.
+#
+# Packages that exist only on amd64 go in full-amd64.txt, so an arm64 build does
+# not fail on a name the archive has never heard of.
+
+# ── Packet analysis ───────────────────────────────────────────────────────────
+# tcpdump is in lite and covers taking a capture. Wireshark is here because 340
+# MB is a lot to hand somebody who only wanted a desktop — but when you need to
+# READ a capture rather than take one, nothing else will do.
+#
+# Capturing live needs CAP_NET_RAW, which the compose files do not grant (they
+# grant CAP_NET_ADMIN, for the VPN — not the same thing). Opening a .pcap
+# somebody sent you needs none of that.
+wireshark                 # 340.1 MB
+
+# ── Office ────────────────────────────────────────────────────────────────────
+# What "full" means to most people, and what Raspberry Pi OS Full leads with.
+# 678 MB is most of the difference between the two images by itself.
+libreoffice               # 677.7 MB
+hunspell-es               # spell checking beyond en_US, which lite already has
+
+# ── A second browser ──────────────────────────────────────────────────────────
+# Not redundancy: a different engine. On a desktop used to check how something
+# renders, "works in Chromium" and "works in Firefox" are two answers.
+firefox-esr               # 521.4 MB
+
+# ── Images ────────────────────────────────────────────────────────────────────
+# Lite views them; this edits them.
+gimp                      # 275.5 MB
+
+# ── Audio ─────────────────────────────────────────────────────────────────────
+# Same shape as gimp: lite plays audio (vlc), this edits it. It also closes a
+# loop the product itself opens — the room records sessions, and audacity is
+# how you trim one without leaving the desktop.
+audacity                  # 79.5 MB
+
+# ── Building things ───────────────────────────────────────────────────────────
+# Raspberry Pi OS puts build-essential in its BASE, because a Pi is a machine
+# people learn to program on. This is a desktop people work from, so it goes in
+# full — but it goes in, because "compile this quickly" is a real errand.
+build-essential           # 297.3 MB
+gdb                       #  29.8 MB
+meson                     #   8.1 MB
+python3-numpy             #  27.7 MB
+geany                     #  15.3 MB · lighter IDE next to mousepad
+
+# ── Go ────────────────────────────────────────────────────────────────────────
+# SentinelDesk is a Go binary, and building or patching it from inside the
+# desktop it serves is a real errand. But 246 MB is 246 MB: it sits here rather
+# than in lite, where it would have been the largest single line in the file
+# after Chromium and VLC.
+#
+# Anyone who needs it on lite is one `apt install golang-go` away.
+golang-go                 # 246.4 MB

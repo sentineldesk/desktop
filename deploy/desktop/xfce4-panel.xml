@@ -1,0 +1,182 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<!-- SentinelDesk
+     A collaborative operating system for people and AI agents.
+
+     Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+
+     Licensed under the Apache License, Version 2.0.
+
+     This product's name and logo are trademarks of Federico Pereira and are not
+     covered by the license above. See the README for the trademark policy.
+
+     SPDX-License-Identifier: Apache-2.0
+
+     The panel's factory configuration, shipped through the skeleton into
+     ~/.config/xfce4/xfconf/xfce-perchannel-xml/ where xfconfd reads it on
+     first start. This file is the DEFAULT, not a cage: inside a living room,
+     right-clicking the panel opens xfce4-panel's own preferences and any
+     change persists in the room's home. A burnt room's successor is back on
+     this file — cattle semantics, same as the rest of the home.
+
+     Layout, left to right:
+       whisker menu · browser / files / terminal / calculator launchers ·
+       window buttons · (space) · pager 1-4 · SentinelDesk status (genmon) ·
+       eyes · cpu graph · clipboard · volume · notification bell · keyboard ·
+       tray · clock
+
+     The pager runs in buttons view because the ask was NUMBERS — four plain
+     numerals with the active one unmissable (gtk.css paints it phosphor).
+     Miniature view shows prettier thumbnails and answers the wrong question.
+
+     Two plugins keep their configuration elsewhere, learned the hard way in
+     the container mock: genmon reads ~/.config/xfce4/panel/genmon-19.rc, and
+     each launcher reads the desktop entries in its own
+     ~/.config/xfce4/panel/launcher-<id>/ directory. The Dockerfile ships
+     those beside this file. -->
+
+<channel name="xfce4-panel" version="1.0">
+  <property name="configver" type="int" value="2"/>
+  <property name="panels" type="array">
+    <value type="int" value="1"/>
+    <property name="dark-mode" type="bool" value="true"/>
+    <property name="panel-1" type="empty">
+      <property name="position" type="string" value="p=6;x=0;y=0"/>
+      <property name="length" type="double" value="100"/>
+      <property name="position-locked" type="bool" value="true"/>
+      <property name="size" type="uint" value="34"/>
+      <property name="icon-size" type="uint" value="20"/>
+      <!-- The glass strip: the surface colour #0d1110 at 0.82, matching the
+           terminal and the frames — dark objects on the light desktop. -->
+      <property name="background-style" type="uint" value="1"/>
+      <property name="background-rgba" type="array">
+        <value type="double" value="0.050999999999999997"/>
+        <value type="double" value="0.066000000000000003"/>
+        <value type="double" value="0.062"/>
+        <value type="double" value="0.81999999999999995"/>
+      </property>
+      <property name="plugin-ids" type="array">
+        <value type="int" value="1"/>
+        <value type="int" value="9"/>
+        <value type="int" value="10"/>
+        <value type="int" value="11"/>
+        <value type="int" value="17"/>
+        <value type="int" value="2"/>
+        <value type="int" value="3"/>
+        <value type="int" value="4"/>
+        <value type="int" value="5"/>
+        <value type="int" value="6"/>
+        <value type="int" value="19"/>
+        <value type="int" value="18"/>
+        <value type="int" value="15"/>
+        <value type="int" value="14"/>
+        <value type="int" value="12"/>
+        <value type="int" value="13"/>
+        <value type="int" value="16"/>
+        <value type="int" value="7"/>
+        <value type="int" value="8"/>
+      </property>
+    </property>
+  </property>
+  <property name="plugins" type="empty">
+    <!-- The menu wears the product's own glyph, not a generic grid. Search
+         sits at the top (position-search-alternate=false), where the Windows
+         muscle memory this menu borrows expects it.
+
+         The icon is a PNG named by absolute path, and both halves of that
+         were established by watching the button: the SVG by path drew the
+         broken-image placeholder, and the name "sentineldesk" — installed
+         and cached in hicolor, with the inheritance chain reaching it —
+         resolved to nothing while "firefox" resolved fine. The rasterised
+         path is the variant that verifiably renders; the Dockerfile
+         produces it from the SVG at build. -->
+    <property name="plugin-1" type="string" value="whiskermenu">
+      <property name="button-title" type="string" value="SentinelDesk"/>
+      <property name="button-icon" type="string" value="/usr/share/pixmaps/sentineldesk.png"/>
+      <property name="launcher-show-description" type="bool" value="false"/>
+      <property name="view-mode" type="int" value="2"/>
+      <property name="position-search-alternate" type="bool" value="false"/>
+      <property name="position-categories-alternate" type="bool" value="true"/>
+      <property name="menu-width" type="int" value="520"/>
+      <property name="menu-height" type="int" value="560"/>
+      <property name="favorites" type="array">
+        <value type="string" value="sentineldesk-browser.desktop"/>
+        <value type="string" value="sentineldesk-files.desktop"/>
+        <value type="string" value="sentineldesk-terminal.desktop"/>
+      </property>
+      <property name="recent" type="array">
+      </property>
+    </property>
+    <property name="plugin-9" type="string" value="launcher">
+      <property name="items" type="array">
+        <value type="string" value="sentineldesk-browser.desktop"/>
+      </property>
+    </property>
+    <property name="plugin-10" type="string" value="launcher">
+      <property name="items" type="array">
+        <value type="string" value="sentineldesk-files.desktop"/>
+      </property>
+    </property>
+    <property name="plugin-11" type="string" value="launcher">
+      <property name="items" type="array">
+        <value type="string" value="sentineldesk-terminal.desktop"/>
+      </property>
+    </property>
+    <!-- galculator as a launcher: Debian 13 no longer carries
+         xfce4-calculator-plugin, and the application was already in the
+         image. One click is one click. -->
+    <property name="plugin-17" type="string" value="launcher">
+      <property name="items" type="array">
+        <value type="string" value="galculator.desktop"/>
+      </property>
+    </property>
+    <property name="plugin-2" type="string" value="separator">
+      <property name="style" type="uint" value="0"/>
+    </property>
+    <property name="plugin-3" type="string" value="tasklist">
+      <property name="grouping" type="bool" value="false"/>
+      <property name="show-labels" type="bool" value="true"/>
+      <property name="flat-buttons" type="bool" value="true"/>
+    </property>
+    <property name="plugin-4" type="string" value="separator">
+      <property name="expand" type="bool" value="true"/>
+      <property name="style" type="uint" value="0"/>
+    </property>
+    <property name="plugin-5" type="string" value="pager">
+      <property name="rows" type="uint" value="1"/>
+      <property name="miniature-view" type="bool" value="false"/>
+    </property>
+    <property name="plugin-6" type="string" value="separator">
+      <property name="style" type="uint" value="0"/>
+    </property>
+    <property name="plugin-19" type="string" value="genmon"/>
+    <property name="plugin-18" type="string" value="eyes"/>
+    <!-- Clicking the graph opens the task manager we actually ship. The
+         plugin's default is "launch a TerminalEmulator with top", which on a
+         desktop without preferred-application helpers was a click that only
+         produced an error dialog. -->
+    <property name="plugin-15" type="string" value="cpugraph">
+      <property name="command" type="string" value="lxtask"/>
+      <property name="in-terminal" type="bool" value="false"/>
+    </property>
+    <property name="plugin-14" type="string" value="xfce4-clipman-plugin"/>
+    <property name="plugin-12" type="string" value="pulseaudio">
+      <property name="enable-keyboard-shortcuts" type="bool" value="false"/>
+    </property>
+    <property name="plugin-13" type="string" value="notification-plugin"/>
+    <!-- Text mode ("us", "es"), not the flag: the default flag renders at
+         panel height and shouts. display-scale 70 keeps it in step with the
+         clock beside it. -->
+    <property name="plugin-16" type="string" value="xkb">
+      <property name="display-type" type="int" value="1"/>
+      <property name="display-scale" type="int" value="70"/>
+    </property>
+    <property name="plugin-7" type="string" value="systray">
+      <property name="square-icons" type="bool" value="true"/>
+    </property>
+    <property name="plugin-8" type="string" value="clock">
+      <property name="digital-layout" type="uint" value="3"/>
+      <property name="digital-time-format" type="string" value="%H:%M"/>
+      <property name="digital-time-font" type="string" value="JetBrains Mono Bold 10"/>
+    </property>
+  </property>
+</channel>

@@ -1,0 +1,21 @@
+# SentinelDesk
+# A collaborative operating system for people and AI agents.
+#
+# Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+#
+# Licensed under the Apache License, Version 2.0.
+#
+# This product's name and logo are trademarks of Federico Pereira and are not
+# covered by the license above. See the README for the trademark policy.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# The preferred application per category — the file every "open the default
+# X" resolves through (exo-open, the CPU graph's click, context menus). Each
+# value names a helper in /usr/share/xfce4/helpers/; editing this file IS the
+# supported way to change a default, per room, and it persists in the room's
+# home like the rest of the configuration.
+TerminalEmulator=lxterminal
+WebBrowser=chromium
+FileManager=thunar
+MailReader=thunderbird
