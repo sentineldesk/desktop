@@ -128,9 +128,20 @@ if [ -z "$HOST_IP" ]; then
 fi
 
 # --- Credentials -------------------------------------------------------------
+# A password nobody chose has to be a password nobody can guess. openssl is the
+# first try and /dev/urandom the second, because a minimal image (a slim base, a
+# CI container) often has the kernel and not the package — that is not an exotic
+# host, it is the ordinary one for an installer piped from curl.
+#
+# If neither works this FAILS. It used to fall back to the constant
+# "sentineldesk" and still announce it as "(generated — save it)", which is the
+# worst of both: a predictable login on a published desktop, described to the
+# person as a unique one. An installer that cannot generate a secret must say so
+# rather than choose a bad one quietly.
 if [ -z "$AUTH_PASS" ]; then
     AUTH_PASS="$(openssl rand -base64 12 2>/dev/null | tr -d '/+=' | cut -c1-16 || true)"
-    [ -z "$AUTH_PASS" ] && AUTH_PASS="sentineldesk"
+    [ -z "$AUTH_PASS" ] && AUTH_PASS="$(head -c 24 /dev/urandom 2>/dev/null | base64 2>/dev/null | tr -d '/+=' | cut -c1-16 || true)"
+    [ -z "$AUTH_PASS" ] && die "could not generate a password (no openssl, no /dev/urandom) — pass one with --pass"
     GENERATED=1
 fi
 
