@@ -1,0 +1,13 @@
+{
+  "_name": "繁體中文（香港）",
+  "toolbar.quality": "串流質素 — 自動、高或中",
+  "label.quality": "質素",
+  "quality.needControl": "只有握有控制權的人可以更改串流質素",
+  "label.shot": "螢幕截圖",
+  "capture.shotSaved": "<b>已儲存螢幕截圖</b> {name}",
+  "capture.noStream": "目前還沒有可以截取的畫面",
+  "capture.failed": "截取失敗：{error}",
+  "media.needControl": "只有握有控制權的人可以發送音訊或視像",
+  "media.micOn": "麥克風已成為桌面上的截取裝置",
+  "group.capture": "截取"
+}

@@ -10,9 +10,11 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# The DISTRO's Makefile: the desktop image, the binary inside it, and the
-# agent that drives it. Nothing here knows the front desk exists — that is
-# the point of this directory. The panel's Makefile lives at the repository
+# The DISTRO's Makefile: the desktop image and the binary inside it. It does
+# not build the agent — that is its own repository, releasing on its own
+# schedule, and it reaches this desktop over the MCP socket like any other
+# client. Nothing here knows the front desk exists either — that is the point
+# of this directory. The panel's Makefile lives at the repository
 # root and calls into this one for the room image.
 #
 # One constraint shapes everything here: the binary uses CGO (go-gst links
@@ -102,8 +104,7 @@ VERSION_ARGS := --build-arg VERSION=$(next_version) \
 
 .PHONY: app build image image-lite image-full up down logs shell test fmt vet help \
         _version version release-binaries checksums push release \
-        ssh-peer ssh-peer-down test-integration check-secrets \
-        agent agent-linux agent-doctor agent-release
+        ssh-peer ssh-peer-down test-integration check-secrets
 
 # _version persists version.txt and prints the version. One target, so make
 # runs it once even when several builds depend on it.
@@ -243,74 +244,14 @@ release-binaries: _version
 	  echo "✓ $(DIST)/$(BINARY)-v$(next_version)-linux-$$arch"; \
 	done
 
-# The agent ships for Linux on both architectures, because that is where the
-# desktop runs and the runtime lives beside it (ADR-004). It is built for the
-# host too, so a developer can drive a container from their own machine with
-# -container.
-AGENT_PLATFORMS := linux/amd64 linux/arm64
-
-## agent: build sentineldesk-agent for this machine
-agent: _version
-	CGO_ENABLED=0 $(GO) build -trimpath \
-		-ldflags "-s -w -X main.version=$(next_version)" \
-		-o bin/sentineldesk-agent ./agent/cmd/sentineldesk-agent
-	@echo "✓ bin/sentineldesk-agent"
-
-## agent-linux: build the agent for every platform it ships on
-#
-# No CGO, so this is a loop rather than a QEMU matrix — which is the whole of
-# ADR-002 and the reason the second binary costs so much less to release than
-# the first one, which links GStreamer and cannot cross-compile at all.
-agent-linux: _version
-	@for p in $(AGENT_PLATFORMS); do \
-		os=$${p%/*}; arch=$${p#*/}; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath \
-			-ldflags "-s -w -X main.version=$(next_version)" \
-			-o bin/sentineldesk-agent-$$os-$$arch ./agent/cmd/sentineldesk-agent || exit 1; \
-		echo "✓ bin/sentineldesk-agent-$$os-$$arch"; \
-	done
-
-## agent-doctor: run doctor INSIDE the running container, over the socket
-#
-# Through the socket as the desktop user, which is how it will actually run —
-# not through docker exec from the host, which is the development path and
-# would prove the wrong thing.
-agent-doctor: agent-linux
-	docker cp bin/sentineldesk-agent-linux-$$(docker exec sentineldesk uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') \
-		sentineldesk:/usr/local/bin/sentineldesk-agent
-	docker exec -u sentineldesk sentineldesk /usr/local/bin/sentineldesk-agent doctor
-
-# The platforms the AGENT is published for, which is a longer list than the
-# desktop's because it is pure Go. darwin is here and not above for the reason
-# ADR-002 gives: the desktop links GStreamer against X11, uinput and PulseAudio
-# and cannot exist on a Mac, while the agent talks to it over a socket and runs
-# anywhere. Somebody driving a desktop on a server from their laptop is the
-# ordinary case, not an exotic one.
-AGENT_RELEASE_PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
-
-## agent-release: versioned agent binaries in dist/, for the GitHub Release
-#
-# The two halves of a release update independently on purpose: almost
-# everything that changes changes the agent — the skills it carries, the
-# terminal, the prompts — and making that cost one twenty-megabyte download
-# instead of a reinstall is the whole point of publishing it separately.
-agent-release: _version
-	@mkdir -p $(DIST)
-	@for p in $(AGENT_RELEASE_PLATFORMS); do \
-	  os=$${p%/*}; arch=$${p#*/}; \
-	  CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath \
-	    -ldflags "-s -w -X main.version=$(next_version)" \
-	    -o $(DIST)/sentineldesk-agent-v$(next_version)-$$os-$$arch \
-	    ./agent/cmd/sentineldesk-agent || exit 1; \
-	  echo "✓ $(DIST)/sentineldesk-agent-v$(next_version)-$$os-$$arch"; \
-	done
-
 ## checksums: SHA256SUMS.txt over the binaries in dist/
 #
-# The glob covers the agent too: sentineldesk-agent-* matches sentineldesk-*.
-# That is deliberate rather than lucky — one file with every hash in it means
-# a downloader fetches one thing and neither binary can be verified against a
-# checksum list that does not know about it.
+# One file with every hash in it, so a downloader fetches one thing and no
+# binary can be verified against a checksum list that does not know about it.
+#
+# It used to cover the agent as well, because sentineldesk-agent-* matches
+# sentineldesk-*. The agent is its own repository now and signs its own
+# release; this glob is back to meaning exactly what it says.
 checksums:
 	@cd $(DIST) && if command -v sha256sum >/dev/null 2>&1; \
 	  then sha256sum $(BINARY)-* > SHA256SUMS.txt; \
@@ -343,23 +284,19 @@ push: _version
 	@echo "✓ pushed $(REGISTRY_IMAGE) :latest :lite :full and $(next_version){,-lite,-full}"
 
 ## release: binaries + checksums + GitHub Release (tag v<version>), via gh
-release: release-binaries agent-release checksums
+release: release-binaries checksums
 	@command -v gh >/dev/null 2>&1 || { echo "✗ gh CLI not installed/authenticated: https://cli.github.com"; exit 1; }
 	@test -z "$$(git status --porcelain)" || { echo "✗ uncommitted changes — commit before releasing:"; git status --short; exit 1; }
 	gh release create v$(next_version) \
 	  $(DIST)/$(BINARY)-v$(next_version)-linux-amd64 \
 	  $(DIST)/$(BINARY)-v$(next_version)-linux-arm64 \
-	  $(DIST)/sentineldesk-agent-v$(next_version)-linux-amd64 \
-	  $(DIST)/sentineldesk-agent-v$(next_version)-linux-arm64 \
-	  $(DIST)/sentineldesk-agent-v$(next_version)-darwin-amd64 \
-	  $(DIST)/sentineldesk-agent-v$(next_version)-darwin-arm64 \
 	  $(DIST)/SHA256SUMS.txt \
 	  --title "SentinelDesk v$(next_version)" \
 	  --notes "commit $(git_hash), built $(build_date)"
 	@echo "✓ released v$(next_version)"
 
 fmt:
-	gofmt -w cmd internal pkg deploy agent test
+	gofmt -w cmd internal pkg deploy test
 
 vet:
 	$(GO) vet ./...

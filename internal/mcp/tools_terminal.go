@@ -942,6 +942,25 @@ func (s *Server) attachWindow(ctx context.Context) error {
 			if ferr := e.ShowOnDesktop(win, shared); ferr != nil {
 				last = fmt.Sprintf("X would not carry the request to place the window: %v", ferr)
 			}
+			// Centred, beside the placing, because where a window opens is a
+			// property of how this desktop opens windows rather than a decision
+			// an agent takes per task. It is the argument internal/loop makes
+			// about the witnessed role: a guarantee that depends on a model
+			// remembering to call move_window is not a guarantee. attachWindow
+			// is the single construction path, so terminal_open, terminal_run's
+			// repair and job_start all get this without a line each.
+			//
+			// Sent every round and its error dropped, both on purpose. Centre
+			// refuses on its own while the emulator is still starting and has
+			// published no real size, and this loop ends the moment the window
+			// is placed — so "every round" is two or three sends over half a
+			// second, not something anybody can be fighting with a mouse.
+			//
+			// Dropped rather than reported because placement on the shared
+			// desktop is the PROMISE — nothing runs unless somebody can watch —
+			// and this is a courtesy. A terminal that is visible and off-centre
+			// has kept every promise this tool makes.
+			_ = e.Centre(win, w.W, w.H, scr.Width, scr.Height)
 		}
 
 		if state, why := placementOf(created, shared); state != placeShared {

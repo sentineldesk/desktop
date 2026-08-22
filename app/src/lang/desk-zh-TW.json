@@ -1,0 +1,13 @@
+{
+  "_name": "繁體中文（台灣）",
+  "toolbar.quality": "串流品質 — 自動、高或中",
+  "label.quality": "品質",
+  "quality.needControl": "只有握有控制權的人可以更改串流品質",
+  "label.shot": "螢幕擷圖",
+  "capture.shotSaved": "<b>已儲存螢幕擷圖</b> {name}",
+  "capture.noStream": "目前還沒有可以擷取的畫面",
+  "capture.failed": "擷取失敗：{error}",
+  "media.needControl": "只有握有控制權的人可以發送音訊或視訊",
+  "media.micOn": "麥克風已成為桌面上的擷取裝置",
+  "group.capture": "擷取"
+}

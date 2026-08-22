@@ -26,7 +26,14 @@ in the `docker` group.
 git clone https://github.com/sentineldesk/desktop.git && cd sentineldesk
 make image            # the room image, native (no QEMU on the target)
 make server           # bin/sentineldesk-server, pure Go
-make agent            # bin/sentineldesk-agent, if rooms will carry the AI
+```
+
+The agent is a separate repository now, and building it is a separate clone —
+it reaches a desktop over the MCP socket like any other client, so it does not
+have to be built here, or at the same version, or at all:
+
+```bash
+git clone https://github.com/sentineldesk/agent.git && cd agent && make build
 ```
 
 ## 2. The integration suite, on the target

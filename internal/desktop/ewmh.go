@@ -378,6 +378,33 @@ func (e *EWMH) MoveResize(win xproto.Window, x, y, w, h int) error {
 		uint32(max(x, 0)), uint32(max(y, 0)), uint32(max(w, 0)), uint32(max(h, 0)))
 }
 
+// Centre moves a window to the middle of the screen, leaving its size alone.
+//
+// Position only. Sending the size back would make this fight whatever the
+// application chose for itself, and a window that is centred and the wrong size
+// is worse than one that is merely off-centre.
+//
+// It refuses rather than guesses when either geometry is unusable — a screen
+// with no dimensions, or a window that has not published a real size yet — so a
+// caller polling while an application starts up can call this every round and
+// only the round with real numbers in it does anything.
+func (e *EWMH) Centre(win xproto.Window, w, h, screenW, screenH int) error {
+	if screenW <= 0 || screenH <= 0 {
+		return fmt.Errorf("the screen has no dimensions to centre against")
+	}
+	if w <= 0 || h <= 0 {
+		return fmt.Errorf("the window has not published a size yet")
+	}
+	x, y := (screenW-w)/2, (screenH-h)/2
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+	return e.MoveResize(win, x, y, -1, -1)
+}
+
 // StateAction is what to do with a window state.
 type StateAction uint32
 

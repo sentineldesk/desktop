@@ -38,7 +38,7 @@ import {
   type StandaloneAuth,
 } from './transport/useDesktopStream'
 import { useWebMcp } from './transport/useWebMcp'
-import { setLanguage } from './i18n'
+import { LANGUAGES, setLanguage } from './i18n'
 import { useLiveStats } from './ui/useLiveStats'
 import { Kbd } from './ui/Kbd'
 
@@ -290,7 +290,9 @@ export function App() {
     show(t('room.abortSent'))
   }
 
-  const langCode = (i18n.language || 'en').slice(0, 2)
+  /* The full tag, not a two-letter slice: zh-TW and zh-HK are different
+   * entries in the menu and slicing would collapse them onto each other. */
+  const langCode = i18n.language || 'en'
   const [langOpen, setLangOpen] = useState(false)
 
   const live = desktop.state === 'live'
@@ -1024,19 +1026,20 @@ function Rail(props: {
           </span>
           <span className="lb">{t('label.language')}</span>
           <span className="lb" id="lang-code">
-            {props.langCode.toUpperCase()}
+            {LANGUAGES.find((l) => l.code === props.langCode)?.chip ??
+              props.langCode.toUpperCase()}
           </span>
         </button>
         {props.langOpen ? (
           <div className="sd-pop floating" role="menu" style={{ position: 'static', minWidth: 0 }}>
-            {(['en', 'es', 'pt'] as const).map((code) => (
+            {LANGUAGES.map((l) => (
               <button
-                key={code}
+                key={l.code}
                 role="menuitemradio"
-                aria-checked={props.langCode === code}
-                onClick={() => props.onPickLang(code)}
+                aria-checked={props.langCode === l.code}
+                onClick={() => props.onPickLang(l.code)}
               >
-                <span>{{ en: 'English', es: 'Español', pt: 'Português' }[code]}</span>
+                <span>{l.name}</span>
               </button>
             ))}
           </div>
