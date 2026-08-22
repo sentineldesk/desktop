@@ -4,19 +4,25 @@ The backend exposes an **MCP server** so a model (Claude Code, Claude Desktop, a
 agent) can use the desktop the way a person does: see the screen, move the mouse,
 type, open programs, manage windows, run commands.
 
-The daemon opens a **local Unix socket** and the `-mcp-stdio` sub-command is a
-thin stdio↔socket bridge that the AI host spawns.
+The daemon opens a **local Unix socket**, and the AI host spawns a thin
+stdio↔socket bridge onto it.
 
 ```
 AI host (Claude Code)
-  └─ spawns:  sentineldesk -mcp-stdio -mcp-sock <socket>   (JSON-RPC bridge over stdin/stdout)
+  └─ spawns:  socat STDIO UNIX-CONNECT:<socket>   (JSON-RPC over stdin/stdout)
                     │  local Unix socket, 0600 (user sentineldesk)
                     ▼
-             sentineldesk (daemon)  ── MCP_SOCK=/run/user/1000/sentineldesk-mcp.sock
+             sentineldesk (daemon)  ── MCP_SOCK=/run/sentineldesk/mcp.sock
 ```
 
-The daemon opens the socket by itself because supervisord passes it
-`MCP_SOCK=/run/user/1000/sentineldesk-mcp.sock`. No extra flag is needed.
+The relay is whatever the host has — `socat` is the usual one. The daemon's own
+`-mcp-stdio` sub-command is the same bridge in Go, for a host that would rather
+not depend on socat, or for a native install where the binary is already there.
+
+The daemon opens the socket by itself, wherever `MCP_SOCK` points — the image's
+default is the container-private `/run/user/1000/sentineldesk-mcp.sock`, and
+`install.sh` and `docker-compose.yml` move it to `/run/sentineldesk/mcp.sock`
+over a mounted volume. No extra flag is needed.
 
 ## Connecting Claude Code (or Claude Desktop)
 
@@ -37,28 +43,57 @@ host gets the ten `workroom_*` control-plane tools plus the room's own 128
 desktop tools, behind the same policy ceiling and the same control gate a
 local host meets — the gateway proxies to the very bridge described below.
 
-**Local** — an AI host on the room's own machine — runs the bridge
-**inside the container** with `docker exec`. Add this to your MCP
-configuration:
+**Local** — an AI host on the room's own machine — talks to the daemon's Unix
+socket, and the socket is already **outside** the container: both `install.sh`
+and `docker-compose.yml` set `MCP_SOCK=/run/sentineldesk/mcp.sock` and mount the
+named volume `sentineldesk-run` over that directory, precisely so a host-side
+agent needs nothing from inside. Any stdio↔socket relay does the job, and
+`socat` is the one every distribution has:
 
 ```json
 {
   "mcpServers": {
     "sentineldesk": {
-      "command": "docker",
-      "args": [
-        "exec", "-i", "-u", "sentineldesk", "sentineldesk",
-        "/usr/local/bin/sentineldesk", "-mcp-stdio",
-        "-mcp-sock", "/run/user/1000/sentineldesk-mcp.sock"
-      ]
+      "command": "sudo",
+      "args": ["socat", "STDIO",
+               "UNIX-CONNECT:/var/lib/docker/volumes/sentineldesk-run/_data/mcp.sock"]
     }
   }
 }
 ```
 
-- `-i` keeps stdin open (that is the MCP transport).
-- `-u sentineldesk` runs as the socket's owner (uid 1000).
-- The container has to be named `sentineldesk` (or adjust the name).
+- **`socat` is a dependency of the HOST**, not of the image — this end runs
+  outside the container. `apt install socat` (Debian/Ubuntu), `dnf install
+  socat`, `apk add socat`, `brew install socat`. The desktop image ships socat
+  too, but that copy is for the desktop's own use and cannot serve this bridge.
+  `install.sh` does not install it: it installs Docker and starts the
+  container, and the relay belongs to whatever machine the AI host runs on.
+- **`sudo` is for the path, not for the socket.** `/var/lib/docker/volumes` is
+  `0710 root:root`, so traversing it needs root even though the socket itself is
+  `0600` and owned by uid 1000. Copy the socket elsewhere, or add your user to a
+  group that can read it, and the `sudo` goes away.
+- **Do not hardcode that path.** It is the default Docker data root and nothing
+  more — rootless Docker, a custom `data-root` and snap packages all put the
+  volume somewhere else. Read it from Docker itself:
+
+  ```bash
+  docker volume inspect -f '{{.Mountpoint}}/mcp.sock' sentineldesk-run
+  ```
+
+- `STDIO` on one side and `UNIX-CONNECT` on the other is the whole bridge: the
+  AI host speaks JSON-RPC on stdin/stdout, and socat carries it to the daemon.
+  No flag, no policy, no container name is involved.
+
+**Not through `docker exec`.** It works — `docker exec -i -u sentineldesk
+sentineldesk /usr/local/bin/sentineldesk -mcp-stdio -mcp-sock
+/run/user/1000/sentineldesk-mcp.sock` is the same JSON-RPC on the same
+stdin/stdout — and it is the wrong shape for this job. It puts the container
+runtime in the middle of a pipe that only ever needed one socket, it ties the
+MCP configuration to a container name, and it hands the AI host the Docker CLI:
+anyone who can reach that daemon owns the machine, which is a far larger
+permission than reading a `0600` socket. Expose the socket instead; that is what
+the volume is for. Keep the `docker exec` form only for a container already
+running without it, and treat it as the temporary answer it is.
 
 **On a native install the path is not `/run/user/1000`.** The installer puts the
 desktop's user on whatever uid is free — 1000 usually belongs to a person
@@ -442,8 +477,8 @@ You can speak the protocol by hand over the socket:
 printf '%s\n%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
-| docker exec -i -u sentineldesk sentineldesk \
-    /usr/local/bin/sentineldesk -mcp-stdio -mcp-sock /run/user/1000/sentineldesk-mcp.sock
+| sudo socat STDIO "UNIX-CONNECT:$(docker volume inspect \
+    -f '{{.Mountpoint}}/mcp.sock' sentineldesk-run)"
 ```
 
 `tools/mcp-cli.py` wraps this for one-off calls. `tools/mcp-validate.py` is

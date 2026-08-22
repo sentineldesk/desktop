@@ -15,10 +15,10 @@
 # or any Linux host.
 #
 # It does the whole job an end user wants and nothing they do not: make sure
-# Docker is there, pull the published image from Docker Hub, and start the
-# desktop in the background so a browser can reach it. It never builds anything
-# and never needs a copy of this repository — cloning the source is for people
-# who want to change it, which is a different path (see the README).
+# Docker and socat are there, pull the published image from Docker Hub, and
+# start the desktop in the background so a browser can reach it. It never builds
+# anything and never needs a copy of this repository — cloning the source is for
+# people who want to change it, which is a different path (see the README).
 #
 #   curl -fsSL https://raw.githubusercontent.com/sentineldesk/desktop/main/install.sh | sudo bash
 #
@@ -65,7 +65,7 @@ while [ $# -gt 0 ]; do
         --name)     NAME="$2"; shift ;;
         --vpn)      ENABLE_VPN=1 ;;
         --no-pull)  PULL=0 ;;
-        -h|--help)  sed -n '14,37p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)  sed -n '14,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)          die "unknown option: $1 (try --help)" ;;
     esac
     shift
@@ -83,6 +83,37 @@ if ! command -v docker >/dev/null 2>&1; then
     systemctl enable --now docker 2>/dev/null || service docker start 2>/dev/null || true
 fi
 docker info >/dev/null 2>&1 || die "Docker is installed but not running — start it and try again"
+
+# --- socat -------------------------------------------------------------------
+# The MCP socket is put on a host volume below, so an AI host on this machine
+# (Claude Code, sentineldesk-agent) can reach it through a plain stdio↔socket
+# relay instead of `docker exec` — one socket rather than the whole Docker
+# daemon, which is a far larger permission than reading a 0600 file. socat is
+# that relay and it weighs about two megabytes, so it goes in now rather than
+# being discovered missing at the moment somebody configures their agent.
+#
+# NEVER fatal: the desktop does not need socat to run, and plenty of hosts will
+# never point an agent at this one. A warning is the whole remedy.
+install_socat() {
+    if   command -v apt-get >/dev/null 2>&1; then
+        DEBIAN_FRONTEND=noninteractive apt-get update -qq \
+            && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq socat
+    elif command -v dnf    >/dev/null 2>&1; then dnf install -y socat
+    elif command -v yum    >/dev/null 2>&1; then yum install -y socat
+    elif command -v zypper >/dev/null 2>&1; then zypper --non-interactive install socat
+    elif command -v apk    >/dev/null 2>&1; then apk add --no-cache socat
+    elif command -v pacman >/dev/null 2>&1; then pacman -Sy --noconfirm socat
+    else return 1
+    fi
+}
+if ! command -v socat >/dev/null 2>&1; then
+    if [ "$(id -u)" -eq 0 ]; then
+        log "installing socat (the MCP bridge for an agent on this host)…"
+        install_socat >/dev/null 2>&1 || true
+    fi
+    command -v socat >/dev/null 2>&1 \
+        || warn "socat could not be installed — install it by hand before pointing an AI host at the MCP socket"
+fi
 
 # --- Where browsers reach this host ------------------------------------------
 # WebRTC hands the browser an address to connect back on; on a server that must
@@ -121,10 +152,17 @@ RUN=(docker run -d --name "$NAME" --restart unless-stopped
     -e WEBRTC_MIN_PORT="$WEBRTC_MIN" -e WEBRTC_MAX_PORT="$WEBRTC_MAX"
     -e NAT1TO1_IP="$HOST_IP"
     -e TLS_SELFSIGNED=1 -e TLS_HOSTS="$HOST_IP"
-    -v sentineldesk-home:/home/sentineldesk
-    # Expose the MCP socket so an agent on the host — Claude Code, or
-    # sentineldesk-agent — can drive the desktop directly, without `docker exec`.
-    -v sentineldesk-run:/run/sentineldesk
+    -v "${NAME}-home":/home/sentineldesk
+    # Both volumes are named after the CONTAINER, so a second desktop started
+    # with --name is a second desktop: with the names fixed, two instances on
+    # one host shared a home and — silently, and much worse — bound the same
+    # mcp.sock, so the newer daemon took over the older one's control socket.
+    # With the default NAME these are the same 'sentineldesk-home' and
+    # 'sentineldesk-run' as before, so nothing is orphaned by the change.
+    #
+    # The run volume is what lets an agent on the host — Claude Code, or
+    # sentineldesk-agent — drive the desktop directly, without `docker exec`.
+    -v "${NAME}-run":/run/sentineldesk
     -e MCP_SOCK=/run/sentineldesk/mcp.sock
     --shm-size=2g)
 if [ "$ENABLE_VPN" -eq 1 ]; then
@@ -134,6 +172,12 @@ RUN+=("$IMAGE:$TAG")
 "${RUN[@]}" >/dev/null
 
 # --- Done --------------------------------------------------------------------
+# Ask Docker where the volume landed rather than assuming /var/lib/docker:
+# rootless Docker, a custom data-root and snap packages all put it elsewhere.
+# The default is only the fallback for the case where the question fails.
+MCP_SOCK_HOST="$(docker volume inspect -f '{{.Mountpoint}}/mcp.sock' "${NAME}-run" 2>/dev/null || true)"
+[ -z "$MCP_SOCK_HOST" ] && MCP_SOCK_HOST="/var/lib/docker/volumes/${NAME}-run/_data/mcp.sock"
+
 cat <<EOF
 
   SentinelDesk is running.
@@ -144,11 +188,16 @@ cat <<EOF
     image     ${IMAGE}:${TAG}
 
   MCP socket (for a host agent — Claude Code, sentineldesk-agent):
-    in the 'sentineldesk-run' volume as mcp.sock. Its host path:
-    docker volume inspect -f '{{.Mountpoint}}/mcp.sock' sentineldesk-run
+    in the '${NAME}-run' volume as mcp.sock. Its host path:
+    docker volume inspect -f '{{.Mountpoint}}/mcp.sock' ${NAME}-run
+
+    Point an AI host at it with socat (the sudo is for the directory Docker
+    keeps volumes in, not for the socket itself):
+    {"mcpServers":{"sentineldesk":{"command":"sudo","args":["socat","STDIO",
+     "UNIX-CONNECT:${MCP_SOCK_HOST}"]}}}
 
   Logs:     docker logs -f ${NAME}
-  Stop:     docker rm -f ${NAME}      (the home volume 'sentineldesk-home' is kept)
+  Stop:     docker rm -f ${NAME}      (the home volume '${NAME}-home' is kept)
   Upgrade:  re-run this installer
 
 EOF

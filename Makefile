@@ -38,6 +38,12 @@ IMAGE          ?= sentineldesk:latest
 IMAGE_LITE     ?= sentineldesk:lite
 IMAGE_FULL     ?= sentineldesk:full
 REGISTRY_IMAGE ?= cnsoluciones/sentineldesk
+# The architectures published, and the builder that produces them. BUILDER is
+# only a NAME: tools/buildx-ready.sh keeps whatever capable builder is already
+# selected (Docker Desktop's, a remote node) and creates this one only when
+# there is none. See that script for why the choice is not made by OS.
+PLATFORMS ?= linux/amd64,linux/arm64
+BUILDER   ?= sentineldesk
 # Pinned on purpose. Compose otherwise derives the project name from the
 # directory holding the file, so moving the compose file orphans every running
 # container: the old project keeps the fixed container_name, and the new one
@@ -224,9 +230,10 @@ ssh-peer-down:
 # Pi 5 on Raspberry Pi OS (trixie), a cloud instance.
 release-binaries: _version
 	@mkdir -p $(DIST)
-	@for arch in amd64 arm64; do \
+	@builder="$$(BUILDER=$(BUILDER) DOCKER=$(DOCKER) tools/buildx-ready.sh $(PLATFORMS))" || exit 1; \
+	for arch in amd64 arm64; do \
 	  echo "▶ linux/$$arch…"; \
-	  $(DOCKER) buildx build $(VERSION_ARGS) \
+	  $(DOCKER) buildx build --builder "$$builder" $(VERSION_ARGS) \
 	    --platform linux/$$arch --target bin \
 	    --output type=local,dest=$(DIST)/.stage-$$arch \
 	    -f deploy/Dockerfile . || exit 1; \
@@ -315,18 +322,24 @@ checksums:
 # One buildx invocation for both platforms, so the registry holds a single
 # manifest list and `docker pull` picks the right architecture on its own.
 # Needs `docker login` first; override REGISTRY_IMAGE for another registry.
+#
+# tools/buildx-ready.sh runs first and leaves a builder that can actually do it
+# — the docker driver cannot push a manifest list, and a Linux host without
+# QEMU registered fails inside the first arm64 RUN rather than at the check.
+# That is why the same command has always worked on a Mac and not on a server.
 push: _version
-	$(DOCKER) buildx build $(VERSION_ARGS) \
-	  --platform linux/amd64,linux/arm64 \
+	@builder="$$(BUILDER=$(BUILDER) DOCKER=$(DOCKER) tools/buildx-ready.sh $(PLATFORMS))" || exit 1; \
+	$(DOCKER) buildx build --builder "$$builder" $(VERSION_ARGS) \
+	  --platform $(PLATFORMS) \
 	  -f deploy/Dockerfile --target desktop \
 	  -t $(REGISTRY_IMAGE):latest -t $(REGISTRY_IMAGE):$(next_version) \
 	  -t $(REGISTRY_IMAGE):lite -t $(REGISTRY_IMAGE):$(next_version)-lite \
-	  --push .
-	$(DOCKER) buildx build $(VERSION_ARGS) \
-	  --platform linux/amd64,linux/arm64 \
+	  --push . || exit 1; \
+	$(DOCKER) buildx build --builder "$$builder" $(VERSION_ARGS) \
+	  --platform $(PLATFORMS) \
 	  -f deploy/Dockerfile --target full \
 	  -t $(REGISTRY_IMAGE):full -t $(REGISTRY_IMAGE):$(next_version)-full \
-	  --push .
+	  --push . || exit 1
 	@echo "✓ pushed $(REGISTRY_IMAGE) :latest :lite :full and $(next_version){,-lite,-full}"
 
 ## release: binaries + checksums + GitHub Release (tag v<version>), via gh
