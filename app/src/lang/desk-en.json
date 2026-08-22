@@ -152,6 +152,7 @@
   "room.youHaveControl": "You have control",
   "room.someoneHasControl": "{who} has control",
   "stats.close": "Close",
+  "ask.title": "Control request",
   "ask.body": "<b>{who}</b> is asking for control of the desktop, so it can move the mouse and type. You can take it back at any time.",
   "ask.allow": "Allow",
   "ask.deny": "Refuse",

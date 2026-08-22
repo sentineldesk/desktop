@@ -1,2 +1,2 @@
-initial_version: 0.6.2
-git_hash: development
+initial_version: 0.6.3
+git_hash: bf46f34

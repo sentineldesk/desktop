@@ -148,6 +148,7 @@ docker run -d --name sentineldesk \
   -e NAT1TO1_IP=172.17.0.17 \
   -e TLS_SELFSIGNED=1 -e TLS_HOSTS=172.17.0.17 \
   -v sentineldesk-home:/home/sentineldesk \
+  -e MCP_SOCK=/run/sentineldesk/mcp.sock \
   --shm-size=2g \
   cnsoluciones/sentineldesk:latest
 # → open https://172.17.0.17:8080 (self-signed cert; accept the warning once)

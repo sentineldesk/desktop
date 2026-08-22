@@ -152,6 +152,7 @@
   "room.youHaveControl": "Você tem o controle",
   "room.someoneHasControl": "{who} tem o controle",
   "stats.close": "Fechar",
+  "ask.title": "Pedido de controle",
   "ask.body": "<b>{who}</b> está pedindo o controle da área de trabalho para mover o mouse e digitar. Você pode retomá-lo quando quiser.",
   "ask.allow": "Permitir",
   "ask.deny": "Recusar",

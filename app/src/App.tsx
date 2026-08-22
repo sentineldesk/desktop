@@ -24,6 +24,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { AgentQuestion } from './transport/AgentQuestion'
+import { ControlRequest } from './transport/ControlRequest'
 import { attachDesktopInput } from './transport/desktopInput'
 import { attachTouchInput } from './transport/touchInput'
 import { FilesDialog } from './transport/FilesDialog'
@@ -522,6 +523,13 @@ export function App() {
 
       {desktop.question ? (
         <AgentQuestion question={desktop.question} onAnswer={desktop.answerQuestion} />
+      ) : null}
+
+      {desktop.controlRequest ? (
+        <ControlRequest
+          request={desktop.controlRequest}
+          onAnswer={desktop.answerControlRequest}
+        />
       ) : null}
 
       <DropLayer

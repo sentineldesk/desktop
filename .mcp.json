@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "sentineldesk": {
+      "command": "sudo",
+      "args": ["socat", "STDIO",
+               "UNIX-CONNECT:/var/lib/docker/volumes/sentineldesk-run/_data/mcp.sock"]
+    }
+  }
+}

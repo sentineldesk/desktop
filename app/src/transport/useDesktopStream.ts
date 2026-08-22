@@ -137,6 +137,26 @@ export interface AgentQuestion {
   readonly secret: boolean
 }
 
+/* The agent asking the ROOM for the controls, waiting on whoever answers
+ * first. Not a question the agent composed: the runtime owns every word of
+ * it (see AskForControl in internal/stream/room.go), which is exactly why it
+ * arrives as its own message instead of riding `question` — an agent that
+ * could write the text of the dialog granting it the desktop could write
+ * anything at all into it.
+ *
+ * The runtime broadcasts it and then WAITS; silence is a refusal. Until this
+ * existed the panel dropped the message on the floor, so every
+ * request_control sat out its timeout against a screen that showed nothing
+ * and answered "nobody answered in time" to an agent whose person was
+ * looking straight at the desktop. */
+export interface ControlRequest {
+  readonly id: number
+  /** Who is asking, by the name the room knows them under. */
+  readonly who: string
+  /** How long the runtime will wait before taking silence for a no. */
+  readonly seconds: number
+}
+
 export interface Desktop {
   readonly state: DesktopState
   readonly stream: MediaStream | null
@@ -217,6 +237,11 @@ export interface Desktop {
   /** Answer the open question. Clears it locally at once; the runtime's own
    * question_done still arrives and clears it for everyone else. */
   answerQuestion(answer: string): void
+  /** The agent's open request for the controls, or null. See ControlRequest. */
+  readonly controlRequest: ControlRequest | null
+  /** Allow or refuse it. Clears the card locally at once; the runtime's own
+   * control_request_done still arrives and clears it for everyone else. */
+  answerControlRequest(granted: boolean): void
   /** Everyone in the room, as presence reports them — the collaborators
    * view and the voice mesh both read from here. */
   readonly members: readonly RoomMember[]
@@ -330,6 +355,7 @@ export function useDesktopStream(
   const [qualityError, setQualityError] = useState<string | null>(null)
   const [deliveries, setDeliveries] = useState<readonly DeskDelivery[]>([])
   const [question, setQuestion] = useState<AgentQuestion | null>(null)
+  const [controlRequest, setControlRequest] = useState<ControlRequest | null>(null)
   const [micLive, setMicLive] = useState(false)
   const [members, setMembers] = useState<readonly RoomMember[]>([])
   const [myId, setMyId] = useState('')
@@ -853,6 +879,20 @@ export function useDesktopStream(
     [sendInput],
   )
 
+  /* Same ref trick, same reason: the card holds this callback across the
+   * life of one request, and the request's id must not go stale in it. */
+  const controlRequestRef = useRef<ControlRequest | null>(null)
+  controlRequestRef.current = controlRequest
+  const answerControlRequest = useCallback(
+    (granted: boolean) => {
+      const req = controlRequestRef.current
+      if (!req) return
+      sendInput({ t: 'control_answer', req: req.id, grant: granted })
+      setControlRequest(null)
+    },
+    [sendInput],
+  )
+
   /* ---- the voice mesh (fase 3) ---------------------------------------
    *
    * Peer-to-peer audio between the people watching, a separate layer from
@@ -1135,6 +1175,7 @@ export function useDesktopStream(
       setRestreamError(null)
       setRestreamAble(true)
       setQuestion(null)
+      setControlRequest(null)
       /* Offers die with the session that held them — the runtime keeps the
        * files, but these ids answer to nobody now. */
       setDeliveries([])
@@ -1485,6 +1526,27 @@ export function useDesktopStream(
                 setQuestion((cur) => (cur && cur.id === (q.id ?? 0) ? null : cur))
                 return
               }
+              if (m.t === 'control_request') {
+                /* The agent wants the mouse and the keyboard. Every word of
+                 * the prompt is the panel's own — the wire carries only who
+                 * is asking and how long the runtime will wait. */
+                const c = m as { id?: number; who?: string; seconds?: number }
+                setControlRequest({
+                  id: c.id ?? 0,
+                  who: String(c.who ?? ''),
+                  seconds: Number(c.seconds ?? 0),
+                })
+                return
+              }
+              if (m.t === 'control_request_done') {
+                /* Answered here, answered by someone else in the room, or
+                 * timed out — either way the card leaves every screen. */
+                const c = m as { id?: number }
+                setControlRequest((cur) =>
+                  cur && cur.id === (c.id ?? 0) ? null : cur,
+                )
+                return
+              }
               if (m.t === 'presence') {
                 const members = m.members ?? []
                 const me = members.find((member) => member.id === m.you)
@@ -1601,6 +1663,8 @@ export function useDesktopStream(
     dismissDelivery,
     question,
     answerQuestion,
+    controlRequest,
+    answerControlRequest,
     pushClipboard,
     uploadFile,
     filesList,
