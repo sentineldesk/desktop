@@ -29,30 +29,49 @@ BINARY  := sentineldesk
 DIST    := dist
 GO      := go
 DOCKER  ?= docker
-# The local tag (what the compose file runs) and the registry name (what
-# `make push` publishes). Override REGISTRY_IMAGE for another registry.
+# ONE name, and everything else derived from it. Override REGISTRY_IMAGE for
+# another registry and every tag below follows.
+#
+# It used to be two names — `sentineldesk:*` locally and
+# `cnsoluciones/sentineldesk:*` on push — and the split cost more than it
+# bought. The compose files name the registry image, so what `make image` built
+# was never what `docker compose up` ran: it pulled a published build while a
+# freshly compiled one sat in the daemon unused, and the only sign was a version
+# in the footer that did not match the source on disk. Same name for both, and
+# that cannot happen.
+#
 # Two variants from one Dockerfile: lite is the desktop plus the tools people
 # need in it; full adds what is too large or too niche to hand everybody. Both
 # carry the version in the tag, because "latest" answers no question worth
 # asking six months from now — and both keep a moving tag so the compose files
 # do not have to be edited on every build.
-IMAGE          ?= sentineldesk:latest
-IMAGE_LITE     ?= sentineldesk:lite
-IMAGE_FULL     ?= sentineldesk:full
 REGISTRY_IMAGE ?= cnsoluciones/sentineldesk
+IMAGE          ?= $(REGISTRY_IMAGE):latest
+IMAGE_LITE     ?= $(REGISTRY_IMAGE):lite
+IMAGE_FULL     ?= $(REGISTRY_IMAGE):full
 # The architectures published, and the builder that produces them. BUILDER is
 # only a NAME: tools/buildx-ready.sh keeps whatever capable builder is already
 # selected (Docker Desktop's, a remote node) and creates this one only when
 # there is none. See that script for why the choice is not made by OS.
 PLATFORMS ?= linux/amd64,linux/arm64
 BUILDER   ?= sentineldesk
-# Pinned on purpose. Compose otherwise derives the project name from the
-# directory holding the file, so moving the compose file orphans every running
-# container: the old project keeps the fixed container_name, and the new one
-# cannot take a name it does not own. That failure surfaces as a "name already
-# in use" conflict with no hint that a rename caused it.
-PROJECT ?= sentineldesk
-COMPOSE ?= $(DOCKER) compose -p $(PROJECT) -f deploy/docker-compose.dev.yml
+# ONE compose file, the same one a person downloads and runs by hand.
+#
+# There were two — this and a deploy/docker-compose.dev.yml with a `build:`
+# stanza — and the split was a leftover from when a local build and a published
+# one had different image names. They do not any more: `make image` tags
+# cnsoluciones/sentineldesk:latest, which is exactly what the file below names,
+# so `make up` builds and then starts the same thing `docker compose up -d`
+# starts.
+#
+# Keeping both had a cost that was not obvious. The dev file never set MCP_SOCK,
+# so `make up` produced a desktop whose socket stayed inside the container and
+# no agent could reach — a difference nobody would look for, between two files
+# that were supposed to describe one system.
+#
+# No -p here on purpose: the file pins `name: sentineldesk` itself, and passing
+# the project on the command line would let the two disagree again.
+COMPOSE ?= $(DOCKER) compose -f docker-compose.yml
 
 # ─── Version, derived from git ───────────────────────────────────────────────
 # The patch auto-increments (with carry: .9 bumps the minor) every time the git
@@ -138,23 +157,23 @@ build: _version app
 image: _version
 	@echo "▶ lite…"
 	$(DOCKER) build $(VERSION_ARGS) -f deploy/Dockerfile --target desktop \
-	  -t $(IMAGE) -t $(IMAGE_LITE) -t sentineldesk:$(next_version) \
-	  -t sentineldesk:$(next_version)-lite .
+	  -t $(IMAGE) -t $(IMAGE_LITE) -t $(REGISTRY_IMAGE):$(next_version) \
+	  -t $(REGISTRY_IMAGE):$(next_version)-lite .
 	@echo "▶ full…"
 	$(DOCKER) build $(VERSION_ARGS) -f deploy/Dockerfile --target full \
-	  -t $(IMAGE_FULL) -t sentineldesk:$(next_version)-full .
-	@echo "✓ sentineldesk:$(next_version)-lite  (also :latest, :lite)"
-	@echo "✓ sentineldesk:$(next_version)-full  (also :full)"
+	  -t $(IMAGE_FULL) -t $(REGISTRY_IMAGE):$(next_version)-full .
+	@echo "✓ $(REGISTRY_IMAGE):$(next_version)-lite  (also :latest, :lite)"
+	@echo "✓ $(REGISTRY_IMAGE):$(next_version)-full  (also :full)"
 
 ## image-lite: only the lite variant, when the full one is not needed
 image-lite: _version
 	$(DOCKER) build $(VERSION_ARGS) -f deploy/Dockerfile --target desktop \
-	  -t $(IMAGE) -t $(IMAGE_LITE) -t sentineldesk:$(next_version)-lite .
+	  -t $(IMAGE) -t $(IMAGE_LITE) -t $(REGISTRY_IMAGE):$(next_version)-lite .
 
 ## image-full: only the full variant
 image-full: _version
 	$(DOCKER) build $(VERSION_ARGS) -f deploy/Dockerfile --target full \
-	  -t $(IMAGE_FULL) -t sentineldesk:$(next_version)-full .
+	  -t $(IMAGE_FULL) -t $(REGISTRY_IMAGE):$(next_version)-full .
 
 ## up: build the image and start the desktop (the development harness)
 up: image
@@ -174,6 +193,17 @@ shell:
 
 test: check-secrets
 	$(GO) test ./...
+	@# The client's own tests, when its dependencies are installed. Skipped
+	@# rather than failed when they are not: a Go developer running `make test`
+	@# on a fresh clone should not be stopped by an npm install they did not
+	@# ask for, and CI installs them. Silence here would be worse than either —
+	@# a test suite that quietly does not run is one nobody notices is gone.
+	@if [ -d app/node_modules ]; then \
+	  echo "▶ client tests"; cd app && npm test --silent; \
+	else \
+	  echo "⚠ app/node_modules is missing, so the client tests did NOT run — \
+`cd app && npm install` to include them"; \
+	fi
 
 ## check-secrets: refuse to build if a credential ever reaches the tree
 #

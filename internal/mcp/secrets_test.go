@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func vaultWith(t *testing.T, pairs map[string]string) *vault {
@@ -265,3 +266,131 @@ func TestReferencesWithNoSecretsAreLeftAlone(t *testing.T) {
 		t.Errorf("env=%v missing=%v, want both empty", env, missing)
 	}
 }
+
+// --- type_secret: a credential into a GUI field ---------------------------------
+//
+// The vault covers COMMANDS: {{secret:name}} becomes an environment variable and
+// the value never enters the text. A login form is the other half — the value has
+// to become keystrokes, and keystrokes are exactly what an agent must not hold.
+//
+// These are written before the tool exists, and each one names a way it could be
+// built wrong rather than a way it should be built right.
+
+// TestTypeSecretIsOffered. Absent means the agent falls back to type_text with
+// the value in the argument, which is the leak this exists to close.
+func TestTypeSecretIsOffered(t *testing.T) {
+	s := &Server{vault: vaultWith(t, nil)}
+	var found *toolDef
+	for i, d := range s.buildSecretTools() {
+		if d.Name == "type_secret" {
+			found = &s.buildSecretTools()[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("type_secret is not in the catalogue")
+	}
+	if !found.RequiresControl {
+		t.Error("typing into the shared screen must be gated on the room's controls")
+	}
+	if found.Visibility != visInjects {
+		t.Errorf("visibility = %v, want injects: it drives the keyboard", found.Visibility)
+	}
+	if found.Risk != riskWrite {
+		t.Errorf("risk = %v, want write", found.Risk)
+	}
+}
+
+// TestTypeSecretRequiresARef. Without one the value goes wherever focus happens
+// to be, which is how a password lands in a chat box. OpenBot's rule, and the
+// reason it is a rule rather than a default.
+func TestTypeSecretRequiresARef(t *testing.T) {
+	s := &Server{vault: vaultWith(t, map[string]string{"db_root": "hunter2-correct-horse"})}
+	_, isErr, _ := s.dispatchSecrets("type_secret", map[string]any{"name": "db_root"})
+	if !isErr {
+		t.Fatal("type_secret without a ref must be refused, not typed into whatever has focus")
+	}
+}
+
+// TestTypeSecretNeverReturnsTheValue. The whole point: the agent asked for a
+// secret to be USED and must get exactly that back and nothing more.
+func TestTypeSecretNeverReturnsTheValue(t *testing.T) {
+	const value = "hunter2-correct-horse"
+	s := &Server{vault: vaultWith(t, map[string]string{"db_root": value})}
+	s.typeInto = func(ref, text string) error { return nil }
+
+	content, isErr, _ := s.dispatchSecrets("type_secret",
+		map[string]any{"name": "db_root", "ref": "e37"})
+	if isErr {
+		t.Fatalf("a known secret into a real ref should succeed: %v", content)
+	}
+	for _, block := range content {
+		if txt, _ := block["text"].(string); strings.Contains(txt, value) {
+			t.Fatalf("the value came back to the agent: %q", txt)
+		}
+	}
+}
+
+// TestTypeSecretActuallyTypesTheValue. The mirror of the test above: a tool that
+// returns nothing and also types nothing would pass every leak check and be
+// useless. `ok` must mean the keystrokes happened.
+func TestTypeSecretActuallyTypesTheValue(t *testing.T) {
+	const value = "hunter2-correct-horse"
+	s := &Server{vault: vaultWith(t, map[string]string{"db_root": value})}
+	var typedRef, typedText string
+	s.typeInto = func(ref, text string) error {
+		typedRef, typedText = ref, text
+		return nil
+	}
+	if _, isErr, _ := s.dispatchSecrets("type_secret",
+		map[string]any{"name": "db_root", "ref": "e37"}); isErr {
+		t.Fatal("should have succeeded")
+	}
+	if typedRef != "e37" {
+		t.Errorf("typed into ref %q, want e37", typedRef)
+	}
+	if typedText != value {
+		t.Errorf("typed %q, want the real secret", typedText)
+	}
+}
+
+// TestTypeSecretAsksWhenTheNameIsUnknown. Same bargain as a command reference: a
+// name with nothing behind it is a question, not a failure.
+func TestTypeSecretAsksWhenTheNameIsUnknown(t *testing.T) {
+	s := &Server{vault: vaultWith(t, nil), room: &askingRoom{answer: "typed-by-a-person"}}
+	var typedText string
+	s.typeInto = func(ref, text string) error { typedText = text; return nil }
+
+	if _, isErr, _ := s.dispatchSecrets("type_secret",
+		map[string]any{"name": "portal_pass", "ref": "e9"}); isErr {
+		t.Fatal("an unknown name should become a question, not a refusal")
+	}
+	if typedText != "typed-by-a-person" {
+		t.Errorf("what the person typed did not reach the field: %q", typedText)
+	}
+}
+
+// TestTypeSecretFailsWhenNobodyCanBeAsked. With no room there is nobody to ask,
+// and inventing a value or typing an empty string would both be worse than
+// saying so.
+func TestTypeSecretFailsWhenNobodyCanBeAsked(t *testing.T) {
+	s := &Server{vault: vaultWith(t, nil)}
+	s.typeInto = func(ref, text string) error {
+		t.Fatal("nothing should have been typed")
+		return nil
+	}
+	if _, isErr, _ := s.dispatchSecrets("type_secret",
+		map[string]any{"name": "nobody_home", "ref": "e1"}); !isErr {
+		t.Fatal("an unknown name with nobody to ask must fail loudly")
+	}
+}
+
+// askingRoom is a room that answers every secret prompt with one canned value.
+// Rooms is embedded rather than implemented: everything except AskSecret would
+// panic if this test reached it, which is the correct outcome — a secret prompt
+// that wandered into presence or control is a bug, not a case to stub.
+type askingRoom struct {
+	Rooms
+	answer string
+}
+
+func (a *askingRoom) AskSecret(string, time.Duration) (string, error) { return a.answer, nil }

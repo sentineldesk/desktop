@@ -42,6 +42,7 @@ job_wait: wait for it, wait until it finishes, when it is done, once it complete
 job_abort: stop it, abort, cancel it, kill the job, stop that, never mind, wrong one
 sleep: wait, pause, sleep, hold on, do nothing for, for three minutes, for 30 seconds, give it a minute, let it run for, while the recording, during the recording, delay, wait a bit, count down
 secret_list: password, passwords, credential, credentials, secret, secrets, vault, login, token, api key, passphrase, what password, which credentials, sign in as
+type_secret: type the password, enter the password, fill in the password, type the secret, enter credentials, log in without showing, password field, login form, sign in form, put the password in, type it for me
 activity: what happened, what changed, who did what, history, timeline, while I was away, since I was stopped, what did they do, what did you do, audit, record, log of actions, recent actions
 job_list: background work, what jobs, what is running in the background, list jobs, everything running
 list_processes: running, tasks, what is running, processes, using the cpu, eating memory, hogging, slowing everything down, using too much, consuming, resource usage, what is slow, cpu, what is eating the cpu, cpu, memory

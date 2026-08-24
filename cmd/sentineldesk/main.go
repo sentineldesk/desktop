@@ -41,6 +41,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/tinyzimmer/go-gst/gst"
 
+	"github.com/sentineldesk/desktop/internal/agentlink"
 	"github.com/sentineldesk/desktop/internal/desktop"
 	"github.com/sentineldesk/desktop/internal/mcp"
 	"github.com/sentineldesk/desktop/internal/media"
@@ -126,6 +127,13 @@ func main() {
 	mcpPolicy := flag.String("mcp-policy", "", "restrict this bridge: full | safe | readonly")
 	mcpDeny := flag.String("mcp-deny", "", "comma-separated tools to deny (suffix * for prefix match)")
 	mcpAllow := flag.String("mcp-allow", "", "comma-separated allow-list for this bridge")
+	// Where the agent runtime knocks. Empty means "next to the MCP socket",
+	// which is what makes relocating that one relocate both — see
+	// agentlink.SocketPath for why the two must not be configured apart.
+	agentSock := flag.String("agent-sock", config.Str("AGENT_SOCK", ""),
+		"unix socket the agent runtime connects to (default: beside -mcp-sock)")
+	agentEnabled := flag.Bool("agent", config.Bool("AGENT_ENABLED", true),
+		"offer the agent chat plane at all")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -188,6 +196,11 @@ func main() {
 	// One recorder, shared by the agent and by the toolbar button: a recording
 	// is a single resource and two of them writing at once would collide.
 	recorder := media.NewRecorder(cfg.Display, cfg.AudioDevice, "")
+	// What a clean take asks to step out of the frame. Wired here because this
+	// is the only place that holds both: the pointers belong to the room, the
+	// recorder to the tool server, and neither should learn about the other to
+	// make this work.
+	recorder.Overlays = room.Overlays()
 
 	// The return path: whatever the browser's microphone captures enters the
 	// desktop as an ordinary capture device.
@@ -306,6 +319,26 @@ func main() {
 		if err := server.Listen(*mcpSock); err != nil {
 			log.Printf("mcp: cannot open socket %s: %v", *mcpSock, err)
 		}
+	}
+
+	// The chat plane: a second socket, for the agent runtime rather than for
+	// MCP hosts. ADR-004 — the daemon listens and the runtime connects, so that
+	// "no agent" costs an empty accept queue instead of a retry loop that has
+	// to be right on every boot of a product whose agent is optional.
+	//
+	// Every failure below is logged and stepped over. None of them may stop the
+	// desktop, which is the whole of ADR-004's decision restated in code: an
+	// optional capability degrades instead of taking everything with it.
+	if path := agentlink.SocketPath(*agentSock, *mcpSock); *agentEnabled && path != "" {
+		desk := agentlink.NewChat(room)
+		if err := desk.Listen(path); err != nil {
+			log.Printf("agent: cannot open socket %s: %v — the chat panel will "+
+				"report the agent as unavailable", path, err)
+		} else {
+			room.SetAgentDesk(desk)
+		}
+	} else if !*agentEnabled {
+		log.Printf("agent: disabled (AGENT_ENABLED), the chat panel will report it as unavailable")
 	}
 
 	// The only informational endpoint (always 200, no secrets): it says whether

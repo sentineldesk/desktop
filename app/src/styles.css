@@ -33,8 +33,33 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; background: #0b0e14; overflow: hidden;
                font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  #screen { width: 100%; height: 100%; object-fit: contain; display: block;
-            background: #000; cursor: default; outline: none; }
+  /* The split. One variable carries it, so the video, the status overlay and
+     anything else measured against the viewport all shrink together — and the
+     width itself is a rule rather than a number a component holds: 420px is
+     comfortable on a monitor and most of the screen on a laptop, so it is
+     capped by both. */
+  :root { --chat-w: 0px; }
+  body.chat-open { --chat-w: min(420px, 42vw); }
+
+  /* The ground behind the video, when the panel makes the column a different
+     shape from the desktop.
+     It was pure black, which is right for a cinema and wrong here: the desktop
+     is a bright surface and the letterboxing read as a broken frame around it
+     rather than as space. A ground taken from the theme sits behind the picture
+     the way a mat sits behind a photograph — you stop seeing it, which is the
+     whole job. */
+  #screen { width: calc(100% - var(--chat-w)); height: 100%; object-fit: contain;
+            display: block; background: var(--sd-bg, #0b0f10); cursor: default;
+            outline: none; transition: width .18s ease; }
+  @media (prefers-reduced-motion: reduce) { #screen { transition: none; } }
+
+  /* While the divider is being dragged. The transition above is right when the
+     panel opens and wrong under the cursor: 180ms of easing on every pointer
+     move leaves the video trailing the handle like a rubber band. The rest of
+     it is what stops a drag from selecting the page it crosses. */
+  body.chat-resizing #screen { transition: none; }
+  body.chat-resizing { cursor: col-resize; user-select: none; }
+  body.chat-resizing * { user-select: none !important; }
 
   /* --- status overlay --------------------------------------------------------
      The first frame anybody sees, before there is a session or a desktop to
@@ -1170,4 +1195,44 @@
 @media (max-width: 900px) {
   .kbd-nav { display: none; }
   #kbd-deck { height: min(30vh, 260px); }
+}
+
+/* --- the agent's button on the rail ----------------------------------------
+   Round and accented, because it is the only control on the rail that changes
+   what the window is FOR: the rest adjust the desktop, this one puts a
+   conversation beside it. Everything else here is the .row it already is, so
+   collapsing the rail keeps working without a second set of rules. */
+#btn-ai .ic { position: relative; }
+#btn-ai .ic svg { stroke-width: 1.6; }
+#btn-ai::before {
+  content: ''; position: absolute; left: 6px; top: 50%;
+  width: 26px; height: 26px; margin-top: -13px; border-radius: 50%;
+  background: color-mix(in srgb, var(--sd-drive) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sd-drive) 42%, transparent);
+  transition: background .15s;
+}
+#toolbar.collapsed #btn-ai::before { left: 50%; margin-left: -13px; top: 7px; margin-top: 0; }
+#btn-ai:hover::before { background: color-mix(in srgb, var(--sd-drive) 26%, transparent); }
+#btn-ai.on::before { background: var(--sd-drive); border-color: var(--sd-drive); }
+#btn-ai.on .ic { color: var(--sd-drive-ink); }
+
+/* Whether there is anything to talk to, on the button itself. A control that
+   opens onto "not available" should have said so before it was pressed. */
+#btn-ai .ai-dot {
+  position: absolute; right: -5px; bottom: -2px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--sd-dim);
+  box-shadow: 0 0 0 2px var(--sd-surface);
+}
+#btn-ai .ai-dot.ready { background: var(--sd-drive); }
+#btn-ai .ai-dot.half { background: var(--sd-watch); }
+
+/* On a phone the split would leave two unusable columns, so the panel takes
+   the screen and the desktop waits behind it. */
+@media (max-width: 640px) {
+  /* !important because the drag handle writes --chat-w as an inline style on
+     body, and an inline value beats a stylesheet rule however specific. A
+     width dragged out on a monitor must not follow the session onto a phone,
+     where the panel is meant to take the whole screen. */
+  body.chat-open { --chat-w: 100vw !important; }
 }

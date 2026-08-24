@@ -34,6 +34,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { isAgentMessage, useAgentChat, type AgentChatApi } from './agentChat'
+import { isConsoleMessage, useAgentConsole, type AgentConsoleApi } from './agentConsole'
 import { applySpeaker, audioConstraints, voiceConstraints } from './mediaPrefs'
 
 /* Standalone credentials for the runtime's own door: a user/password pair
@@ -232,6 +234,14 @@ export interface Desktop {
   saveDelivery(id: string): void
   /** Drop one delivery from the tray. The file stays on the desktop. */
   dismissDelivery(id: string): void
+  /** The agent chat panel: availability, transcript, history and the three
+   * things a person can do with it. See agentChat.ts.
+   *
+   * One object rather than a dozen fields spread through this interface,
+   * because it is a feature somebody either uses or does not — and a panel that
+   * is not open should not be able to reach half of it by accident. */
+  readonly chat: AgentChatApi
+  readonly console: AgentConsoleApi
   /** The runtime's open question to the room, or null. See AgentQuestion. */
   readonly question: AgentQuestion | null
   /** Answer the open question. Clears it locally at once; the runtime's own
@@ -395,6 +405,26 @@ export function useDesktopStream(
     if (!channel || channel.readyState !== 'open') return
     channel.send(JSON.stringify(event))
   }, [])
+
+  /* The chat panel's own state. It rides THIS DataChannel — the browser has no
+   * idea there is an agent process behind the daemon, and sends `agent_say`
+   * exactly the way it sends a mouse move. Everything about how the desktop
+   * reaches the runtime is the daemon's business, which is what lets the agent
+   * be absent without a line of this file caring. */
+  const chat = useAgentChat(sendInput)
+  /* Read through a ref by the DataChannel handler below, which is installed
+   * once per connection and would otherwise keep calling into the render it was
+   * created in. The same pattern questionRef uses, a few hundred lines down,
+   * and for the same reason. */
+  const chatRef = useRef(chat)
+  chatRef.current = chat
+
+  /* The console session — the agent's own terminal in a window. Held the same
+   * way and for the same reason: handle() runs from a DataChannel callback that
+   * closed over its render. */
+  const console_ = useAgentConsole(sendInput)
+  const consoleRef = useRef(console_)
+  consoleRef.current = console_
 
   const toggleControl = useCallback(() => {
     sendInput({ t: yoursRef.current ? 'release_control' : 'take_control' })
@@ -1494,6 +1524,22 @@ export function useDesktopStream(
                 }
                 return
               }
+              if (isConsoleMessage(m.t as string)) {
+                /* A terminal's bytes, addressed to THIS browser — a console is
+                 * the one thing on this plane that is not broadcast. Routed
+                 * before the chat, because the two vocabularies do not overlap
+                 * and checking the narrower one first keeps the common case a
+                 * single comparison. */
+                consoleRef.current.handle(m as Record<string, unknown>)
+                return
+              }
+              if (isAgentMessage(m.t as string)) {
+                /* The chat panel, in one line. Routed rather than handled here
+                 * because none of it touches the peer connection, and this
+                 * file is the transport. */
+                chatRef.current.handle(m as Record<string, unknown>)
+                return
+              }
               if (m.t === 'question') {
                 /* The runtime says whether the people at the DESKTOP are the
                  * ones who must answer. Today it always says yes; the day a
@@ -1670,6 +1716,8 @@ export function useDesktopStream(
     filesList,
     filesOp,
     downloadFile,
+    chat,
+    console: console_,
   }
 }
 

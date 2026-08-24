@@ -64,8 +64,12 @@ func (s *Server) buildUITools() []toolDef {
 			}),
 		},
 		{
-			Name:        "ui_find",
-			Risk:        riskRead,
+			Name: "ui_find",
+			Risk: riskRead,
+			// Measured at ~770ms against a real desktop (stage 1 §11.1). Ten
+			// seconds is far past anything healthy and short enough that a
+			// hung accessibility bridge is noticed rather than waited on.
+			TimeoutMS:   10000,
 			Description: "Find UI elements by role, name or text — e.g. the button called 'Sign in', or every text entry. Returns each match with its `ref` (use it with ui_click / ui_set_text) plus its screen coordinates. This replaces OCR + find_text for real applications.",
 			InputSchema: schema(map[string]any{
 				"role": pStr("role as the TOOLKIT reports it — run ui_tree first to see the " +
@@ -263,7 +267,11 @@ func (s *Server) buildBrowserTools() []toolDef {
 			Visibility:      visVisible,
 			Risk:            riskWrite,
 			RequiresControl: true,
-			Description:     "Navigate the active tab to a URL and wait for the load to finish.",
+			// Beyond this verb's own default timeout_ms of 30000, so its own
+			// bound wins first and this is the backstop for a load that hangs
+			// past it. A deadline equal to the parameter would race it.
+			TimeoutMS:   45000,
+			Description: "Navigate the active tab to a URL and wait for the load to finish.",
 			InputSchema: schema(map[string]any{
 				"url": pStr("URL"), "timeout_ms": pIntDef("how long to wait for the load, default 30000", 30000),
 			}, "url"),
@@ -314,6 +322,52 @@ func (s *Server) buildBrowserTools() []toolDef {
 			InputSchema: schema(map[string]any{
 				"selector": pStr("CSS selector, e.g. '.ytp-skip-ad-button' or 'video'"),
 			}, "selector"),
+		},
+		{
+			Name: "browser_wait_until",
+			Risk: riskRead,
+			Description: "Wait until a JavaScript condition is TRUE in the page, and return " +
+				"how long it took. This is how you wait for something that is not an " +
+				"element appearing: a video reaching its end, a counter passing a number, " +
+				"an upload finishing.\n\n" +
+				"Use it instead of looping. Checking a condition yourself costs a step each " +
+				"time you look, so waiting three minutes for a video by taking a reading " +
+				"every fifteen seconds spends twelve steps to learn one fact. This spends " +
+				"ONE, however long the wait, because the waiting happens in the page.\n\n" +
+				"Examples: \"document.querySelector('video')?.ended === true\" waits for a " +
+				"video to finish; \"document.querySelector('video').currentTime > 60\" waits " +
+				"for it to pass a minute; \"!document.querySelector('.ad-showing')\" waits " +
+				"for an advertisement to end.\n\n" +
+				"Returns {ok, waited_ms, value} — ok false means the timeout was reached, " +
+				"and value is what the condition evaluated to at the end, so a wait that " +
+				"gave up still tells you where things stood.\n\n" +
+				"IT POLLS, so the condition has to still be true when it looks. An EVENT " +
+				"is not: a video's `ended` is true from the moment it finishes until the " +
+				"page moves on, which on YouTube is milliseconds, and a poll lands either " +
+				"side of it. That exact wait sat for five minutes while the video it was " +
+				"watching finished, autoplayed the next one, and started somebody else's " +
+				"video — and reported false the whole time.\n\n" +
+				"Use `setup` for those: one expression, run ONCE before the waiting " +
+				"starts, to latch the event into a flag the condition can then read. " +
+				"setup: \"window.__done=false; document.querySelector('video')" +
+				".addEventListener('ended',()=>window.__done=true,{once:true})\" with " +
+				"expression: \"window.__done\" catches an end that lasted an instant. " +
+				"Anything an event fires for — ended, load, a custom event, a " +
+				"MutationObserver — becomes waitable this way.\n\n" +
+				"Write such an expression as the BARE flag, not \"flag === true\". " +
+				"Both wait correctly, but `value` reports what the expression evaluated " +
+				"to: the comparison says \"false\" both when the flag is false and when " +
+				"it never existed, which is what a page reload leaves behind. The bare " +
+				"flag says \"undefined\" for the second, so a wait that outlived a " +
+				"navigation can be told from one that is still waiting.",
+			InputSchema: schema(map[string]any{
+				"expression": pStr("a JavaScript expression that becomes true"),
+				"setup": pStr("JavaScript to run ONCE before waiting, to latch an event " +
+					"into a flag the expression can read. Use this for anything that is " +
+					"an instant rather than a state"),
+				"timeout_ms": pIntDef("give up after this long, default 60000", 60000),
+				"poll_ms":    pIntDef("how often to test it, default 250", 250),
+			}, "expression"),
 		},
 		{
 			Name: "browser_wait_for",
@@ -398,8 +452,114 @@ func (s *Server) dispatchBrowser(ctx context.Context, name string, args map[stri
 	case "browser_wait_for":
 		c, e := s.toolBrowserWaitFor(ctx, argStr(args, "selector"), argStr(args, "state"), argInt(args, "timeout_ms"))
 		return c, e, true
+	case "browser_wait_until":
+		c, e := s.toolBrowserWaitUntil(ctx, argStr(args, "expression"), argStr(args, "setup"),
+			argInt(args, "timeout_ms"), argInt(args, "poll_ms"))
+		return c, e, true
 	}
 	return nil, false, false
+}
+
+// toolBrowserWaitUntil waits for a condition to become true, inside the page.
+//
+// # Why this exists, and what it is worth
+//
+// An agent asked to play a video and stop when it ends has no way to say that.
+// It can read the clock — browser_element reports currentTime and ended — but
+// reading is a STEP, so it reads, waits, reads, waits, and a three-minute video
+// costs a dozen steps to learn one fact. That is not a hypothetical: it is what
+// happened, and the run was cut off at its step limit with the video still
+// playing and the recording still running.
+//
+// The waiting belongs where the answer is. One evaluate goes out, the page
+// tests the condition on its own timer, and the promise resolves the moment it
+// holds. One step, however long the wait.
+//
+// # Why polling in the page rather than a MutationObserver
+//
+// browser_wait_for uses an observer, correctly: a node appearing IS a mutation.
+// A condition is not. "currentTime > 60" changes with no DOM event at all, and
+// an observer would sleep through it. So this polls — but it polls in the page,
+// at a cost of one comparison per tick, instead of across a WebSocket at the
+// cost of a step.
+//
+// The expression is evaluated as written, in the page, with the page's
+// privileges. That is browser_eval's bargain and this is the same one; it is
+// marked riskRead because waiting reads, but what it reads is arbitrary.
+func (s *Server) toolBrowserWaitUntil(ctx context.Context, expr, setup string, timeoutMs, pollMs int) ([]map[string]any, bool) {
+	expr = strings.TrimSpace(expr)
+	setup = strings.TrimSpace(setup)
+	if expr == "" {
+		return textContent("browser_wait_until needs an expression to wait for"), true
+	}
+	if timeoutMs <= 0 {
+		timeoutMs = 60000
+	}
+	// A ceiling, because this holds a socket and a step open. Ten minutes is
+	// longer than any single thing on a page and short enough that a run which
+	// asked for a wait that will never end still gets its answer today.
+	if timeoutMs > 600000 {
+		timeoutMs = 600000
+	}
+	if pollMs <= 0 {
+		pollMs = 250
+	}
+	if pollMs < 50 {
+		pollMs = 50
+	}
+
+	// The condition is wrapped in its own try, so a page that throws — a null
+	// dereference on an element that has not appeared yet, which is the common
+	// case — is a FALSE rather than an error that ends the wait. Waiting for
+	// something that does not exist yet is the whole point.
+	// setup runs ONCE, before the first test, and its own throw is swallowed the
+	// same way the condition's is: a listener attached to an element that has
+	// not appeared yet must leave the wait running rather than end it. What it
+	// exists for is the gap between an EVENT and a STATE — a poll can only see
+	// states, and `ended` stops being true the instant the page moves on.
+	//
+	// Deliberately not a separate step. Latching an event and then waiting on
+	// the flag in two calls works, and costs two steps for one wait — which is
+	// the arithmetic this whole tool exists to fix.
+	js := waitUntilScript(expr, setup, pollMs, timeoutMs)
+
+	// The read deadline is the page's timeout plus room for the round trip. A
+	// deadline shorter than the wait would abandon the socket just before the
+	// answer the caller asked for — which is the bug cdpEvalTimeout exists to
+	// let callers avoid.
+	out, err := cdpEvalTimeout(js, time.Duration(timeoutMs)*time.Millisecond+10*time.Second)
+	if err != nil {
+		return textContent("browser_wait_until failed: %v", err), true
+	}
+	return textContent("%s", out), false
+}
+
+// waitUntilScript is the page-side program the wait runs.
+//
+// Built apart from sending it so a test can read it. What it has to get right
+// is not observable from the tool's return value: whether setup ran BEFORE the
+// first test (after it, an event in the gap is lost), and whether a setup that
+// throws ends the wait (it must not — a listener attached to an element that
+// has not appeared yet is the ordinary case).
+func waitUntilScript(expr, setup string, pollMs, timeoutMs int) string {
+	setupJS := ""
+	if setup != "" {
+		setupJS = fmt.Sprintf("try { %s } catch (e) {}\n  ", setup)
+	}
+
+	return fmt.Sprintf(`(() => new Promise(resolve => {
+  %sconst started = Date.now();
+  const test = () => { try { return !!(%s); } catch (e) { return false; } };
+  const done = ok => resolve(JSON.stringify({
+    ok, waited_ms: Date.now() - started,
+    value: (() => { try { return String(%s); } catch (e) { return 'threw: ' + e.message; } })(),
+  }));
+  if (test()) return done(true);
+  const t = setInterval(() => {
+    if (test()) { clearInterval(t); clearTimeout(bail); done(true); }
+  }, %d);
+  const bail = setTimeout(() => { clearInterval(t); done(false); }, %d);
+}))()`, setupJS, expr, expr, pollMs, timeoutMs)
 }
 
 // toolBrowserWaitFor waits for a selector to match, from inside the page.
@@ -747,7 +907,30 @@ func elementReportJS(sel string) string {
     tag: el.tagName.toLowerCase(),
     text: (el.innerText || el.textContent || "").trim().slice(0, 400),
     label: (el.getAttribute("aria-label") || el.getAttribute("title") || "").trim(),
+    // Where a link GOES, which is a different question from what it says and
+    // the only one some tasks have. Reading an id out of a search result to
+    // open it directly needs this; without it the only way to follow a link is
+    // to click it and find out where you landed, which on YouTube means
+    // arriving inside a Mix that then autoplays into somebody else's video.
+    //
+    // Resolved rather than raw: el.href is absolute even when the attribute is
+    // relative, so a caller never has to know the page's base to use it.
+    href: (el.tagName === "A" || el.tagName === "AREA") ? el.href : undefined,
     disabled: !!el.disabled || el.getAttribute("aria-disabled") === "true",
+    // A toggle's STATE, which is the question you have before you click one:
+    // is it already on? Absent for anything that is not a toggle, so its
+    // presence is itself the answer to "is this a switch". aria-pressed is the
+    // same idea spelled for buttons, and native inputs carry it as a property.
+    //
+    // Without this the only readable clue was the label, which is in the
+    // page's language — so "is autoplay on" was answerable in English and not
+    // in Spanish, and a skill written against one broke on the other.
+    checked: (() => {
+      const a = el.getAttribute("aria-checked") || el.getAttribute("aria-pressed");
+      if (a === "true" || a === "false") return a === "true";
+      if (typeof el.checked === "boolean") return el.checked;
+      return undefined;
+    })(),
     rect: {x: Math.round(r.left), y: Math.round(r.top),
            w: Math.round(r.width), h: Math.round(r.height)},
     style: {display: st.display, visibility: st.visibility, opacity: st.opacity},

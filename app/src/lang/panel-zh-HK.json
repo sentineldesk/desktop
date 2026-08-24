@@ -31,5 +31,5 @@
   "int.accLiveEmptyBody": "連接器是一個已驗證的帳戶，自動化會以它為對象 — 例如有人敲房間的門時，用 Telegram 通知你。",
   "int.accTestNeedsOn": "請先啟用帳戶才能測試",
   "wr.quality": "串流質素",
-  "wr.qualitySet": "串流質素：{{m}}"
+  "wr.qualitySet": "串流質素：{m}"
 }

@@ -151,8 +151,13 @@
 <section id="install" data-track="install">
   <h2>Installing and running it</h2>
 
-  <p>Everything runs in one container. There is nothing to install on the
-  machines that connect to it — a browser is the client.</p>
+  <p>It is <b>two containers</b> — the desktop, and the agent beside it — joined
+  by a single volume of Unix sockets and started together with Docker Compose.
+  There is nothing to install on the machines that connect to it: a browser is
+  the client.</p>
+
+  <p>The agent is optional and the desktop does not depend on it. Naming the
+  desktop is how you leave it out.</p>
 
   <h3 id="install-requirements">What you need</h3>
   <ul>
@@ -180,72 +185,113 @@
       the video is reachable. <code>--help</code> lists every option.</p>
     </div>
 
-    <div class="tab" data-label="docker run">
-      <p>Smaller, for a quick look. No TURN, so it works over a LAN or on
-      Linux but may fail to connect through a restrictive NAT.</p>
-<pre><code>docker run -d --name sentineldesk \
-  -p 8080:8080 -p 59000-59049:59000-59049/udp \
-  -e AUTH_USER=admin -e AUTH_PASS=change-me \
-  -e WEBRTC_MIN_PORT=59000 -e WEBRTC_MAX_PORT=59049 \
-  -v sentineldesk-home:/home/sentineldesk \
-  -v sentineldesk-run:/run/sentineldesk \
-  -e MCP_SOCK=/run/sentineldesk/mcp.sock \
-  --shm-size 2g \
-  --cap-add NET_ADMIN --device /dev/net/tun \
-  cnsoluciones/sentineldesk:latest</code></pre>
-      <p>The UDP range is what WebRTC's media travels over. Publishing it and
-      pinning it with the two variables is what makes the connection work
-      without host networking.</p>
+    <div class="tab" data-label="docker compose">
+      <p>The published images, two services, one command. Download the file and
+      bring it up — no clone, no build:</p>
+<pre><code>curl -fsSLO https://raw.githubusercontent.com/sentineldesk/desktop/main/docker-compose.yml
+AUTH_PASS=change-me HOST_IP=192.168.0.100 docker compose up -d</code></pre>
 
-      <p>The <code>sentineldesk-run</code> volume and <code>MCP_SOCK</code>
-      expose the agent's MCP socket outside the container, so an agent on the
-      host — Claude Code, or <code>sentineldesk-agent</code> — can drive the
-      desktop directly, without <code>docker exec</code>. Leave them out and the
-      socket stays private to the container.</p>
-
-      <p><b>Watching from another machine</b> — Docker on a VM or a server,
-      the browser somewhere else on the LAN — needs one more variable. By
-      default the container advertises its internal bridge address to WebRTC,
-      which no other machine can reach, and the page stalls at “Establishing
-      WebRTC”. <code>NAT1TO1_IP</code> tells it its outside face — and putting
-      the same address in <code>TLS_HOSTS</code> puts it on the certificate:</p>
-<pre><code>docker run -d --name sentineldesk \
-  -p 8080:8080 -p 59000-59049:59000-59049/udp \
-  -e AUTH_USER=admin -e AUTH_PASS=change-me \
-  -e WEBRTC_MIN_PORT=59000 -e WEBRTC_MAX_PORT=59049 \
-  -e NAT1TO1_IP=192.168.0.100 \
-  -e TLS_HOSTS=192.168.0.100 \
-  -v sentineldesk-home:/home/sentineldesk \
-  -v sentineldesk-run:/run/sentineldesk \
-  -e MCP_SOCK=/run/sentineldesk/mcp.sock \
-  --shm-size 2g \
-  --cap-add NET_ADMIN --device /dev/net/tun \
-  cnsoluciones/sentineldesk:latest</code></pre>
-      <p><code>192.168.0.100</code> stands for the machine running Docker —
-      use its real LAN address, then open
+      <p><code>HOST_IP</code> is the address browsers reach this host at — its
+      LAN address, or the public IP on a VPS. Off localhost it is required
+      rather than optional: WebRTC would otherwise advertise the container's
+      bridge address, which no other machine can reach, and the page stalls at
+      “Establishing WebRTC” with the video black. Then open
       <code>https://192.168.0.100:8080</code>.</p>
+
+      <p>Set <code>SENTINELDESK_TAG=full</code> for the
+      <a href="#install-images">heavier image</a>.</p>
+
+      <h4>What it starts</h4>
+      <table>
+        <tr><th>service</th><th>container</th><th>what it is</th></tr>
+        <tr><td><code>sentineldesk</code></td><td><code>sentineldesk</code></td>
+            <td>the desktop: X, the browser, the apps, the WebRTC stream, the MCP server</td></tr>
+        <tr><td><code>agent</code></td><td><code>sentineldesk-agent</code></td>
+            <td>the runtime that drives it — the brain behind the chat panel</td></tr>
+      </table>
+
+      <p><b>The agent is optional</b>, and naming the desktop is how you say
+      so:</p>
+<pre><code>docker compose up -d                # the desktop and an agent beside it
+docker compose up -d sentineldesk   # the desktop, on its own</code></pre>
+      <p>The desktop has no <code>depends_on</code> and no link to the agent, so
+      the second line is a complete deployment rather than a crippled one. Order
+      does not matter either: started first, the agent waits for the desktop and
+      reconnects when it comes back.</p>
+
+      <h4>How the two are joined</h4>
+      <p>One volume, <code>sentineldesk-run</code>, holding Unix sockets and
+      mounted in both. That is the <b>only</b> link between them. The agent has
+      no ports and no network of its own, so nothing about the conversation
+      leaves the host — and the agent can only ever do what that socket grants,
+      which is why there is one security boundary here rather than two.</p>
+
+      <table>
+        <tr><th>volume</th><th>holds</th></tr>
+        <tr><td><code>sentineldesk-home</code></td><td>browser profiles, files, the TLS certificate</td></tr>
+        <tr><td><code>sentineldesk-audit</code></td><td>the action log — kept apart, so wiping a profile never takes the record with it</td></tr>
+        <tr><td><code>sentineldesk-agent</code></td><td>the agent's model choice, keys and history</td></tr>
+        <tr><td><code>sentineldesk-work</code></td><td>scratch space for screenshots and recordings in flight</td></tr>
+      </table>
+
+      <h4>Everyday commands</h4>
+<pre><code>docker compose ps                      # what is up
+docker compose logs -f sentineldesk    # follow the desktop
+docker compose logs -f agent           # follow the agent
+docker compose restart agent           # restart one service
+docker compose down                    # stop both, keep the volumes
+docker compose pull &amp;&amp; docker compose up -d    # upgrade in place</code></pre>
+      <p><code>down</code> leaves the volumes alone, so the home, the audit log
+      and the agent's keys survive it. To start genuinely fresh, remove them by
+      name — and read that as the destructive command it is:
+      <code>docker volume rm sentineldesk-home sentineldesk-agent</code>.</p>
+
+      <h4>Configuring it</h4>
+      <p>Compose reads a <code>.env</code> beside the file, which is the tidier
+      place for anything you would otherwise repeat on the command line:</p>
+<pre><code>AUTH_USER=admin
+AUTH_PASS=a-real-password
+HOST_IP=192.168.0.100
+SENTINELDESK_TAG=latest        # or `full`
+TZ=America/Argentina/Buenos_Aires
+KEYBOARD_LAYOUT=latam
+HTTP_PORT=8080</code></pre>
+      <p>Every one has a default; only <code>AUTH_PASS</code> and
+      <code>HOST_IP</code> really want setting before anybody else can reach
+      the deployment.</p>
 
       <div class="note">
         <b>HTTPS is the default</b>
         <p>The desktop serves TLS out of the box: with nothing configured it
         generates a self-signed certificate once, keeps it in the home volume,
-        and the browser asks you to accept it exactly once. Your own
-        certificate wins via <code>TLS_CERT</code>/<code>TLS_KEY</code>. This
-        is more than the lock icon: browsers only allow the microphone and
-        the rich clipboard on secure origins, so a desktop reached over plain
-        HTTP was quietly missing features.</p>
+        and the browser asks you to accept it exactly once. Your own certificate
+        wins via <code>TLS_CERT</code>/<code>TLS_KEY</code>. This is more than
+        the lock icon: browsers only allow the microphone and the rich clipboard
+        on secure origins, so a desktop reached over plain HTTP was quietly
+        missing features.</p>
         <p>To terminate TLS yourself with a reverse proxy in front — nginx,
-        Caddy, <a href="https://nginxproxymanager.com/">Nginx Proxy
-        Manager</a> — set <code>TLS_SELFSIGNED=0</code> so the backend speaks
-        plain HTTP to the proxy and the proxy serves its own certificate.</p>
+        Caddy, <a href="https://nginxproxymanager.com/">Nginx Proxy Manager</a> —
+        set <code>TLS_SELFSIGNED=0</code> so the backend speaks plain HTTP to
+        the proxy.</p>
       </div>
 
-      <p>The last two lines are what
-      <a href="#whats-installed-vpn">the VPN client</a> needs: a tunnel device,
-      and the capability to configure routes. Without both, OpenVPN installs
-      fine and then fails at the moment somebody actually needs it. Drop them on
-      a deployment that will never dial a VPN — <code>NET_ADMIN</code> lets the
-      container manage its own network stack, which is a real grant.</p>
+      <h4>A relay for hostile networks</h4>
+      <p>Peer-to-peer fails on symmetric NAT and where UDP is dropped. A TURN
+      service is in the file and off by default, because a relay carries every
+      frame of every session through it and paying that when nobody needs it is
+      the wrong trade:</p>
+<pre><code>docker compose --profile turn up -d</code></pre>
+      <p>Set <code>CLIENT_TURN_URLS</code> on the desktop when it is running, or
+      browsers are never told the relay exists.</p>
+
+      <h4>The built-in VPN</h4>
+      <p>The desktop can dial OpenVPN, which needs a tunnel device and the
+      capability to configure routes. Both are commented out in the compose
+      file — uncomment <code>cap_add: NET_ADMIN</code> and
+      <code>devices: /dev/net/tun</code> on the <code>sentineldesk</code>
+      service. <code>NET_ADMIN</code> lets the container manage its own network
+      stack, which is a real grant, so leave it off on a deployment that will
+      never dial one.</p>
 
       <div class="note">
         <b>Where <code>seccomp=unconfined</code> went</b>
@@ -254,9 +300,9 @@
         set it too. Neither does any more. It was there for <b>Steam</b>, whose
         bootstrap needs user namespaces that Docker's default profile blocks,
         and Steam is only in the <a href="#whats-installed">full image on
-        amd64</a>. It
-        widens what the container may ask of the kernel, which is not a thing to
-        leave switched on for a feature most installations never start.</p>
+        amd64</a>. It widens what the container may ask of the kernel, which is
+        not a thing to leave switched on for a feature most installations never
+        start.</p>
         <p>It has one other effect worth knowing, in the opposite direction:
         <b>with</b> it, Chromium keeps its own sandbox. The container tests for
         user namespaces at startup and adds <code>--no-sandbox</code> only when
@@ -265,17 +311,6 @@
         changes either way, so the <code>browser_*</code> and <code>ui_*</code>
         tools behave the same.</p>
       </div>
-    </div>
-
-    <div class="tab" data-label="docker compose">
-      <p>The same published image, for people who prefer compose. Download the
-      file and bring it up — no clone, no build:</p>
-<pre><code>curl -fsSLO https://raw.githubusercontent.com/sentineldesk/desktop/main/docker-compose.yml
-AUTH_PASS=change-me HOST_IP=192.168.0.100 docker compose up -d</code></pre>
-      <p>Set <code>SENTINELDESK_TAG=full</code> for the full image, and
-      <code>HOST_IP</code> to the address browsers reach this host at (its LAN
-      or public IP). The compose file names <code>cnsoluciones/sentineldesk</code>
-      directly.</p>
     </div>
 
     <div class="tab" data-label="From source">
@@ -318,11 +353,12 @@ docker build -f deploy/Dockerfile --target desktop -t sentineldesk:latest .</cod
           Go; on amd64 also Steam and Wine</td></tr>
   </table>
 
-  <p>To run full instead, point at that tag — one word on
-  <code>docker run</code>, <code>SENTINELDESK_TAG=full</code> with compose, or
-  <code>--full</code> with the installer:</p>
+  <p>To run full instead, point at that tag — <code>SENTINELDESK_TAG</code> with
+  compose, or <code>--full</code> with the installer:</p>
 
-<pre><code>docker run -d --name sentineldesk … cnsoluciones/sentineldesk:full</code></pre>
+<pre><code>SENTINELDESK_TAG=full docker compose up -d
+# or, in .env:  SENTINELDESK_TAG=full
+# or:           curl -fsSL …/install.sh | sudo bash -s -- --full</code></pre>
 
   <div class="note">
     <b>Full is built on top of lite</b>
@@ -436,6 +472,8 @@ docker rm -f sentineldesk</code></pre>
     <tr><td><code>MCP_POLICY</code></td><td>full</td><td><code>full</code>, <code>approve</code> (dangerous tools ask the room), <code>safe</code> (no tools that run code or touch the system), <code>readonly</code></td></tr>
     <tr><td><code>MCP_DENY</code> / <code>MCP_ALLOW</code></td><td>—</td><td>Patterns, for finer control than the four levels</td></tr>
     <tr><td><code>AGENT_NAME</code></td><td>AI agent</td><td>The name the agent appears under in the participant list</td></tr>
+    <tr><td><code>AGENT_ENABLED</code></td><td>1</td><td>The agent chat panel. At <code>0</code> the desktop boots exactly as before and the panel reports it as unavailable</td></tr>
+    <tr><td><code>AGENT_SOCK</code></td><td>beside <code>MCP_SOCK</code></td><td>The socket the agent runtime dials. Derived from the MCP one by default — same directory, its own name — so relocating one relocates both</td></tr>
   </table>
 
   <h3 id="config-tuning">Tuning</h3>
@@ -686,6 +724,49 @@ docker volume rm sentineldesk-home</code></pre>
     and the agent reads what actually happened instead of being told about it
     second-hand.</p>
   </div>
+</section>
+
+<section id="agent-chat" data-track="use">
+  <h2>Talking to the agent from the browser</h2>
+
+  <p>The round button at the top of the rail opens a chat beside the desktop:
+  the screen splits, the desktop on the left and the conversation on the right.
+  You ask for something in your own words, the agent works, and you watch it
+  <b>while</b> it happens — every tool it calls appears under its reply, lined
+  up with whatever is moving on the screen next to it.</p>
+
+  <p>The dot on the button says whether there is anything to talk to before you
+  press it: green ready, amber running but with no model configured, grey not
+  there.</p>
+
+  <h3 id="agent-chat-install">You need the agent</h3>
+  <p>The desktop works on its own; the agent is optional and lives in
+  <a href="https://github.com/sentineldesk/agent">its own repository</a>. The
+  panel tells three situations apart and offers the command that fixes each one
+  — not installed, installed but not running, or running with no model. Copy the
+  line, run it, and the panel goes green by itself: nothing to reload.</p>
+
+  <div class="note">
+    <b>The desktop never depends on it</b>
+    <p>An agent that is missing, an API key that expired, a loop that will not
+    terminate: each costs the chat panel and nothing else. The desktop boots the
+    same, the session carries on, and restarting the agent touches neither the
+    video nor anyone watching it. <code>AGENT_ENABLED=0</code> turns the whole
+    plane off.</p>
+  </div>
+
+  <h3 id="agent-chat-control">It works automatically, and still asks for the controls</h3>
+  <p>From the chat the agent acts without asking about each step — that is what
+  it is for. What does not change is the desktop's own rule: <b>if you are
+  driving, it has to ask you</b>, with the same card as always. And when it
+  decides to check something with you before doing it, it asks in the chat,
+  where you are looking.</p>
+
+  <h3 id="agent-chat-history">One history</h3>
+  <p>The panel's conversations and the terminal's are the same conversations:
+  they are kept in one database and the history button reads that one. A task
+  you started by typing in the terminal shows up in the browser, and the other
+  way round.</p>
 </section>
 
 <section id="capture-recording" data-track="use">
@@ -1061,6 +1142,131 @@ lsof -nP -iUDP:5000</code></pre>
   <code>readOnlyHint</code> and <code>destructiveHint</code> annotations, so an
   AI host that understands them can decide on its own when to ask you before
   acting — without knowing anything about SentinelDesk.</p>
+</section>
+
+<section id="tui" data-track="use">
+  <h2>The TUI: driving the agent from a terminal</h2>
+
+  <p>The chat panel in the browser is one face on the agent. The other is a
+  terminal session, and it is the one with everything in it — the model picker,
+  the cost panel, the approval prompts. Open it in the agent's container:</p>
+
+<pre><code>docker exec -it sentineldesk-agent sentineldesk-agent</code></pre>
+
+  <p>With no arguments it finds the socket, opens a session, and waits. Each task
+  you type keeps the previous one's context, so it is a conversation rather than
+  a series of unrelated questions. The two faces are views of the same session:
+  what you do here shows up in the browser panel.</p>
+
+  <h3 id="tui-commands">What you can type</h3>
+  <p>Anything that is not a slash command is sent to the agent — as a new task,
+  or as steering if one is already running. Typing <code>/</code> opens a palette
+  that completes as you go, so none of these has to be memorised.</p>
+
+  <table>
+    <tr><th>command</th><th></th></tr>
+    <tr><td><code>/help</code></td><td>what you can type here</td></tr>
+    <tr><td><code>/model</code></td><td>pick the model that answers next — switches mid-session, no restart</td></tr>
+    <tr><td><code>/connect</code></td><td>add a provider's API key, checked with the provider before it is saved</td></tr>
+    <tr><td><code>/panel</code> · <code>ctrl+b</code></td><td>the session's context, tokens and cost so far</td></tr>
+    <tr><td><code>/compact</code></td><td>fold the older conversation into a summary</td></tr>
+    <tr><td><code>/rewind</code> · <code>/undo</code></td><td>drop back before an earlier task — <b>the desktop is not rewound</b></td></tr>
+    <tr><td><code>/memory</code></td><td>have something remembered, permanently</td></tr>
+    <tr><td><code>/stop</code> · <code>ctrl-c</code></td><td>end the run after this turn</td></tr>
+    <tr><td><code>/language</code></td><td>the language of the interface</td></tr>
+    <tr><td><code>/exit</code> · <code>ctrl-d</code></td><td>leave the session</td></tr>
+  </table>
+
+  <p>Commands your deployment shipped in <code>commands/*.md</code> appear in the
+  palette too — a command is a stored prompt with a name, so typing one expands
+  to its text exactly as if you had written it out.</p>
+
+  <div class="note">
+    <b><code>/rewind</code> moves the conversation, not the machine</b>
+    <p>It drops the transcript back to before an earlier task, which is the cheap
+    way out of a model that went down a wrong path five turns ago. What it
+    cannot do is undo what was done: packages are still installed, windows are
+    still open, files are still written. The agent is told so in the same breath,
+    and the audit trail is append-only and is not rewound — what happened
+    happened. For a real undo of the machine, take a restore point first with
+    <code>snapshot_create</code>.</p>
+  </div>
+
+  <h3 id="tui-approvals">Approving what it does</h3>
+  <p>Start with <code>-mode ask</code> and every call that <i>changes</i>
+  something stops for you first. Reads go through untouched, deliberately: a
+  confirmation for every screenshot trains somebody to press <code>y</code>
+  without reading, and a confirmation nobody reads is worse than none.</p>
+
+<pre><code>docker exec -it sentineldesk-agent sentineldesk-agent -mode ask</code></pre>
+
+  <table>
+    <tr><th>key</th><th></th></tr>
+    <tr><td><code>y</code></td><td>allow this call</td></tr>
+    <tr><td><code>n</code></td><td>refuse it — the agent is told not to look for another way round</td></tr>
+    <tr><td><code>a</code></td><td>allow calls <b>like</b> this one for the rest of the run</td></tr>
+    <tr><td><code>t</code></td><td>allow this <b>tool</b> for the rest of the run, whatever the arguments</td></tr>
+  </table>
+
+  <p><code>a</code> binds to the command's human-understandable name, so
+  approving <code>apt install nginx</code> also covers
+  <code>apt install curl</code> and does <b>not</b> cover <code>rm</code>. A
+  chained or redirecting command is never generalised: approving
+  <code>apt update</code> cannot become approval for
+  <code>apt update &amp;&amp; rm -rf /</code>.</p>
+
+  <p>Grants live for the run and never reach disk — one that outlived the session
+  would outlive the reason somebody gave it. Every grant, and every later call
+  that used one, is written to the trail, so “why wasn't I asked?” is answerable
+  afterwards.</p>
+
+  <h3 id="tui-bounds">Bounding a run</h3>
+  <p>All four are off by default and compose freely:</p>
+<pre><code>sentineldesk-agent -run "install nginx and show me it working" \
+  -max-turns 40 -max-spend 0.50 -max-time 10m -mode ask</code></pre>
+  <p><code>-max-turns</code> is a checkpoint rather than a wall: reaching it asks
+  the model whether more steps would finish the job, and there is a hard ceiling
+  behind that it cannot argue past. <code>-max-spend</code> and
+  <code>-max-time</code> are ceilings — they end the run with what it has, they
+  do not make it hurry.</p>
+
+  <h3 id="tui-history">Reading back what happened</h3>
+  <p>The trail is the point of the whole design, and these are how you read
+  it:</p>
+<pre><code>sentineldesk-agent -history          # every past run, with turns, calls and cost
+sentineldesk-agent -history 42       # one run in full
+sentineldesk-agent -export 42        # the whole session on stdout
+sentineldesk-agent -costs            # what has been spent, and on what
+sentineldesk-agent -resume 42        # pick it back up; 0 is the most recent</code></pre>
+  <p><code>-history &lt;id&gt;</code> shows the model's own plan beside what it
+  actually did, names which agent acted when a sub-task was delegated, and says
+  plainly why a run stopped — <code>blocked · over-budget</code>, rather than
+  leaving you to infer it from a turn count that happens to equal the limit.</p>
+
+  <p><code>-resume</code> redraws the conversation and tells the model how long
+  ago it stopped, and that the desktop kept running without it. That matters more
+  than it sounds: this is not a coding agent picking up files that are still
+  where it left them — windows closed, somebody else may hold the controls, and
+  the screen it remembers is a photograph.</p>
+
+  <h3 id="tui-doctor">Before spending anything</h3>
+<pre><code>sentineldesk-agent -doctor                        # 15 checks against the real desktop, no model
+sentineldesk-agent -tools "audit the firewall"    # what it would be offered, and its ranking
+sentineldesk-agent -skills                        # the skills found, and where each came from
+sentineldesk-agent -providers                     # which models can be reached, and what each needs</code></pre>
+  <p><code>-doctor</code> is the first thing to run when something is wrong. It
+  talks to the real desktop, involves no model and costs nothing. If it fails,
+  the problem is not the key.</p>
+
+  <h3 id="tui-host">Running it on the host instead</h3>
+  <p>The agent finds the socket in the <code>sentineldesk-run</code> volume by
+  itself, so it does not have to be in a container at all:</p>
+<pre><code>docker compose up -d sentineldesk   # the desktop only
+sentineldesk-agent -serve           # the agent, on the host</code></pre>
+  <p>This is the lightest way to work while you are <i>changing</i> the agent —
+  no image to rebuild between edits. Do not run both: two runtimes on one desktop
+  means the newer connection wins and the older is dropped. Nothing breaks; it is
+  just confusing. Pick one.</p>
 </section>
 
 <section id="whats-installed" data-track="use">

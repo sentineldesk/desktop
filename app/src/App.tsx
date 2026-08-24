@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { AgentChat } from './transport/AgentChat'
 import { AgentQuestion } from './transport/AgentQuestion'
 import { ControlRequest } from './transport/ControlRequest'
 import { attachDesktopInput } from './transport/desktopInput'
@@ -188,6 +189,24 @@ export function App() {
   useEffect(() => {
     localStorage.setItem('sentineldesk.rail', rail)
   }, [rail])
+
+  /* The chat panel, remembered per browser like the rail is. Somebody who
+   * works with the agent open should find it open, and somebody who never
+   * uses it should never see it — which is the same argument the rail's three
+   * postures already won. */
+  const [chatOpen, setChatOpen] = useState(
+    () => localStorage.getItem('sentineldesk.chat') === 'open',
+  )
+  useEffect(() => {
+    localStorage.setItem('sentineldesk.chat', chatOpen ? 'open' : 'shut')
+    /* The split lives in one CSS variable on the body, so the video shrinks
+     * and everything positioned against the viewport follows it. Done as a
+     * class rather than an inline style because the stylesheet owns the width
+     * — a panel that is 42vw on a laptop and 420px on a monitor is a rule, not
+     * a number this component should be holding. */
+    document.body.classList.toggle('chat-open', chatOpen)
+    return () => document.body.classList.remove('chat-open')
+  }, [chatOpen])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'º' || e.key === '°') {
@@ -431,6 +450,16 @@ export function App() {
             setLanguage(code)
             setLangOpen(false)
           }}
+          chatOpen={chatOpen}
+          onChat={() => setChatOpen((v) => !v)}
+        />
+      ) : null}
+
+      {live && chatOpen ? (
+        <AgentChat
+          chat={desktop.chat}
+          console={desktop.console}
+          onClose={() => setChatOpen(false)}
         />
       ) : null}
 
@@ -651,6 +680,9 @@ function Rail(props: {
   langOpen: boolean
   onLang(): void
   onPickLang(code: string): void
+  /** The chat panel's posture, and the button that changes it. */
+  chatOpen: boolean
+  onChat(): void
 }) {
   const { t } = useTranslation()
   const d = props.desktop
@@ -693,6 +725,34 @@ function Rail(props: {
         <span className="x-only">SENTINELDESK</span>
         <span className="c-only">SD</span>
       </div>
+
+      {/* The way in to the agent. Round and accented rather than another row
+          in the list, because it is the only control here that changes what
+          the whole window is for: the rest adjust the desktop, this one puts a
+          conversation beside it. The dot says whether there is anything to
+          talk to, taken from the same status the panel's header reads — a
+          button that opens onto "not available" should have said so first. */}
+      <button
+        id="btn-ai"
+        className={`row ai${props.chatOpen ? ' on' : ''}`}
+        onClick={props.onChat}
+        title={t('toolbar.chat')}
+        aria-pressed={props.chatOpen}
+      >
+        <span className="ic">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 3.5l1.7 4.3 4.3 1.7-4.3 1.7L12 15.5l-1.7-4.3L6 9.5l4.3-1.7z" />
+            <path d="M18.5 15.2l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" />
+          </svg>
+          <i
+            className={`ai-dot${
+              d.chat.agent.ready ? ' ready' : d.chat.agent.present ? ' half' : ''
+            }`}
+            aria-hidden="true"
+          />
+        </span>
+        <span className="lb">{t('label.chat')}</span>
+      </button>
 
       <div id="presence" className={`x-only ${stateCls}`}>
         <div id="pres-head">

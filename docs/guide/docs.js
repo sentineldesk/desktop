@@ -176,9 +176,48 @@ function normalise(t) {
           .replace(/[\u2018\u2019\u02bc']/g, '');
 }
 
-function buildSearchIndex() {
-  searchIndex = [];
-  document.querySelectorAll('#content section[id]').forEach(function (sec) {
+/* The OTHER languages' text, indexed against the same ids.
+ *
+ * Section and heading ids are identical across en/es/pt — the translations
+ * change the prose, never the anchors — so a hit in any language points at a
+ * table-of-contents entry that already exists in the one being read.
+ *
+ * This is here because the search was silently monolingual, and the way it
+ * failed was worse than not having it: somebody reading the English page and
+ * typing "instalar" got "no results for instalar", which reads as *the guide
+ * does not cover installing*. It does. The reader was simply searching in their
+ * own language, which is the most natural thing they could have done.
+ *
+ * Fetched in the background AFTER the page is usable, and a failure is ignored:
+ * this widens what search finds and must never be what stops it working. */
+var altIndexed = {};
+
+function indexOtherLanguages() {
+  ['en', 'es', 'pt'].forEach(function (lang) {
+    if (lang === current || altIndexed[lang]) return;
+    altIndexed[lang] = true;
+    fetch('content/' + lang + '.html', { cache: 'force-cache' })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (html) {
+        if (!html) return;
+        // A detached document: parsed, read, and never attached to the page.
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        collectInto(doc, searchIndex);
+        // Somebody may have typed while this was in flight. Re-run their query
+        // against the wider index rather than leaving them looking at the
+        // "nothing matched" this arrival just disproved.
+        var box = document.getElementById('search');
+        if (box && box.value.trim()) applySearch(box.value);
+      })
+      .catch(function () { /* a language that will not load simply is not searched */ });
+  });
+}
+
+/* The reading half of buildSearchIndex, over any root. Shared so the live
+   document and a parsed translation cannot drift into indexing different
+   things. */
+function collectInto(root, bucket) {
+  root.querySelectorAll('section[id]').forEach(function (sec) {
     var heading = sec.querySelector(':scope > h2') || sec.querySelector(':scope > h1');
     if (!heading) return;
     // The section's own text stops where its first subsection starts.
@@ -187,7 +226,7 @@ function buildSearchIndex() {
       if (/^H[1-3]$/.test(n.tagName)) break;
       own += ' ' + n.textContent;
     }
-    searchIndex.push({ id: sec.id, text: normalise(heading.textContent + own) });
+    bucket.push({ id: sec.id, text: normalise(heading.textContent + own) });
 
     sec.querySelectorAll(':scope > h3[id]').forEach(function (h3) {
       var t = h3.textContent;
@@ -195,9 +234,15 @@ function buildSearchIndex() {
         if (/^H[1-3]$/.test(m.tagName)) break;   // h4 keeps counting: it is part of this
         t += ' ' + m.textContent;
       }
-      searchIndex.push({ id: h3.id, text: normalise(t) });
+      bucket.push({ id: h3.id, text: normalise(t) });
     });
   });
+}
+
+function buildSearchIndex() {
+  searchIndex = [];
+  altIndexed = {};                       // a language switch re-indexes from scratch
+  collectInto(document.getElementById('content'), searchIndex);
 }
 
 /* Filtering the table of contents rather than replacing it with a result list:
@@ -430,6 +475,10 @@ async function load(lang) {
   buildTOC();
   buildSearchIndex();
   wireSearch();
+  // The other languages, after the page is already usable. Deliberately not
+  // awaited: search works on the current language from the first keystroke and
+  // simply gets wider a moment later.
+  indexOtherLanguages();
   buildTabs();
   addCopyButtons();
   watchSections();

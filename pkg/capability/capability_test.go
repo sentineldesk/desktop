@@ -130,3 +130,38 @@ func TestTheWireFormCarriesTheGate(t *testing.T) {
 		t.Errorf("visibility on the wire is %q, want injects", wire.Annotations.Visibility)
 	}
 }
+
+func TestTimeoutMSIsPublishedOnlyWhenDeclared(t *testing.T) {
+	// Absent means unbounded, and a client must be able to tell that from a
+	// declared zero without a sentinel value.
+	undeclared := Def{Name: "read_file", Risk: RiskRead}
+	if _, ok := undeclared.Annotations()["sentineldesk/timeoutMs"]; ok {
+		t.Fatal("a verb with no deadline must not publish one")
+	}
+
+	declared := Def{Name: "ui_find", Risk: RiskRead, TimeoutMS: 10000}
+	got, ok := declared.Annotations()["sentineldesk/timeoutMs"]
+	if !ok {
+		t.Fatal("a declared deadline was not published")
+	}
+	if got != 10000 {
+		t.Fatalf("timeoutMs = %v, want 10000", got)
+	}
+}
+
+func TestTimeoutMSSurvivesTheWireForm(t *testing.T) {
+	raw, err := json.Marshal(Def{Name: "browser_goto", Risk: RiskWrite,
+		Visibility: VisVisible, TimeoutMS: 45000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		Annotations map[string]any `json:"annotations"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if wire.Annotations["sentineldesk/timeoutMs"] != float64(45000) {
+		t.Fatalf("the deadline did not reach the wire: %v", wire.Annotations)
+	}
+}

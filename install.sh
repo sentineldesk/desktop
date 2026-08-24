@@ -15,10 +15,18 @@
 # or any Linux host.
 #
 # It does the whole job an end user wants and nothing they do not: make sure
-# Docker and socat are there, pull the published image from Docker Hub, and
-# start the desktop in the background so a browser can reach it. It never builds
-# anything and never needs a copy of this repository — cloning the source is for
-# people who want to change it, which is a different path (see the README).
+# Docker and socat are there, write a docker-compose.yml, and bring up the two
+# services — the desktop and the agent beside it — so a browser can reach them.
+# It never builds anything and never needs a copy of this repository — cloning
+# the source is for people who want to change it, which is a different path
+# (see the README).
+#
+# It writes compose rather than running `docker run`, and that is the point
+# rather than a style choice. This is TWO containers joined by one volume, and a
+# pair of `docker run` lines is a deployment nobody can inspect, upgrade or stop
+# as a unit afterwards. What this leaves behind is a file: `docker compose ps`
+# answers what is running, `docker compose pull && up -d` upgrades it, and the
+# person who inherits the machine can read what was decided.
 #
 #   curl -fsSL https://raw.githubusercontent.com/sentineldesk/desktop/main/install.sh | sudo bash
 #
@@ -31,6 +39,8 @@
 #   --port <n>        the web port              (HTTP_PORT; default: 8080)
 #   --name <n>        the container name        (NAME; default: sentineldesk)
 #   --vpn             allow the built-in OpenVPN client (adds NET_ADMIN + tun)
+#   --no-agent        the desktop only; no agent container
+#   --dir <path>      where to write docker-compose.yml (default: /opt/sentineldesk)
 #   --no-pull         do not pull; use the image already on the host
 #   -h, --help        this help
 
@@ -47,6 +57,14 @@ AUTH_USER="${AUTH_USER:-admin}"
 AUTH_PASS="${AUTH_PASS:-}"
 HOST_IP="${HOST_IP:-}"
 ENABLE_VPN="${ENABLE_VPN:-0}"
+AGENT_IMAGE="${AGENT_IMAGE:-cnsoluciones/sentineldesk-agent}"
+AGENT_TAG="${AGENT_TAG:-latest}"
+WITH_AGENT="${WITH_AGENT:-1}"
+# Where the compose file lands. /opt is the conventional place for something an
+# operator installed rather than something a distribution shipped, and it has to
+# be a real directory on disk: a compose file in $PWD would be lost the moment
+# somebody ran the installer from their home and later looked in /opt.
+STACK_DIR="${STACK_DIR:-/opt/sentineldesk}"
 PULL=1
 
 log()  { printf '\033[36m▸\033[0m %s\n' "$*"; }
@@ -64,8 +82,10 @@ while [ $# -gt 0 ]; do
         --port)     HTTP_PORT="$2"; shift ;;
         --name)     NAME="$2"; shift ;;
         --vpn)      ENABLE_VPN=1 ;;
+        --no-agent) WITH_AGENT=0 ;;
+        --dir)      STACK_DIR="$2"; shift ;;
         --no-pull)  PULL=0 ;;
-        -h|--help)  sed -n '14,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)  sed -n '14,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)          die "unknown option: $1 (try --help)" ;;
     esac
     shift
@@ -145,44 +165,166 @@ if [ -z "$AUTH_PASS" ]; then
     GENERATED=1
 fi
 
-# --- Replace any previous instance -------------------------------------------
-if docker ps -a --format '{{.Names}}' | grep -qx "$NAME"; then
-    log "an existing '$NAME' container is here — replacing it (the home volume is kept)…"
-    docker rm -f "$NAME" >/dev/null 2>&1 || true
+# --- Compose v2 --------------------------------------------------------------
+# The plugin, not the old standalone `docker-compose` binary. get.docker.com
+# ships it, but a host with Docker already installed from a distribution package
+# may not have it — and finding that out at `up` time, after the file is
+# written, is the wrong moment.
+if ! docker compose version >/dev/null 2>&1; then
+    die "Docker Compose v2 is missing (\`docker compose version\` fails).
+    On Debian/Ubuntu: apt-get install docker-compose-plugin
+    Elsewhere: https://docs.docker.com/compose/install/"
 fi
 
-[ "$PULL" -eq 1 ] && { log "pulling $IMAGE:$TAG …"; docker pull "$IMAGE:$TAG"; }
+# --- Retire anything started the old way -------------------------------------
+# Earlier versions of this installer used `docker run`, so an upgrade meets
+# containers compose did not create and will not adopt. Remove them: the VOLUMES
+# are what hold the state and they are kept, so this loses nothing but the
+# container objects.
+for old in "$NAME" "${NAME}-agent"; do
+    if docker ps -a --format '{{.Names}}' | grep -qx "$old"; then
+        log "removing the existing '$old' container (its volumes are kept)…"
+        docker rm -f "$old" >/dev/null 2>&1 || true
+    fi
+done
 
-# --- Run ---------------------------------------------------------------------
-log "starting SentinelDesk…"
-RUN=(docker run -d --name "$NAME" --restart unless-stopped
-    -p "${HTTP_PORT}:8080"
-    -p "${STUN_PORT}:3478/udp"
-    -p "${WEBRTC_MIN}-${WEBRTC_MAX}:${WEBRTC_MIN}-${WEBRTC_MAX}/udp"
-    -e AUTH_USER="$AUTH_USER" -e AUTH_PASS="$AUTH_PASS"
-    -e WEBRTC_MIN_PORT="$WEBRTC_MIN" -e WEBRTC_MAX_PORT="$WEBRTC_MAX"
-    -e NAT1TO1_IP="$HOST_IP"
-    -e TLS_SELFSIGNED=1 -e TLS_HOSTS="$HOST_IP"
-    -v "${NAME}-home":/home/sentineldesk
-    # Both volumes are named after the CONTAINER, so a second desktop started
-    # with --name is a second desktop: with the names fixed, two instances on
-    # one host shared a home and — silently, and much worse — bound the same
-    # mcp.sock, so the newer daemon took over the older one's control socket.
-    # With the default NAME these are the same 'sentineldesk-home' and
-    # 'sentineldesk-run' as before, so nothing is orphaned by the change.
-    #
-    # The run volume is what lets an agent on the host — Claude Code, or
-    # sentineldesk-agent — drive the desktop directly, without `docker exec`.
-    -v "${NAME}-run":/run/sentineldesk
-    -e MCP_SOCK=/run/sentineldesk/mcp.sock
-    --shm-size=2g)
+# --- Write the stack ---------------------------------------------------------
+mkdir -p "$STACK_DIR" || die "could not create $STACK_DIR"
+COMPOSE="$STACK_DIR/docker-compose.yml"
+
+# A previous file is kept, once, under a dated name. Overwriting somebody's
+# hand-edited compose without a copy is the kind of loss an installer has no
+# right to cause — and a re-run of this script is the commonest way it would
+# happen.
+if [ -f "$COMPOSE" ]; then
+    BACKUP="$COMPOSE.$(date +%Y%m%d-%H%M%S).bak"
+    cp -a "$COMPOSE" "$BACKUP"
+    warn "an existing $COMPOSE was kept as $(basename "$BACKUP")"
+fi
+
+log "writing $COMPOSE …"
+{
+cat <<YAML
+# Written by install.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ). Safe to edit and
+# re-apply with: docker compose -f $COMPOSE up -d
+#
+# Two services joined by ONE volume, sentineldesk-run, which is a directory of
+# Unix sockets. The agent has no ports and no network of its own, so nothing
+# about the conversation leaves this host — and the agent can only do what that
+# socket grants, which is why there is one security boundary here and not two.
+name: ${NAME}
+
+services:
+  sentineldesk:
+    image: ${IMAGE}:${TAG}
+    container_name: ${NAME}
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT}:8080"
+      - "${STUN_PORT}:3478/udp"
+      - "${WEBRTC_MIN}-${WEBRTC_MAX}:${WEBRTC_MIN}-${WEBRTC_MAX}/udp"
+    environment:
+      - AUTH_USER=${AUTH_USER}
+      - AUTH_PASS=${AUTH_PASS}
+      - WEBRTC_MIN_PORT=${WEBRTC_MIN}
+      - WEBRTC_MAX_PORT=${WEBRTC_MAX}
+      # The address browsers reach this host at. Off localhost this is required,
+      # or WebRTC advertises the container's bridge IP and the video stays black.
+      - NAT1TO1_IP=${HOST_IP}
+      - TLS_SELFSIGNED=1
+      - TLS_HOSTS=${HOST_IP}
+      # The socket lives in a mounted directory so an agent can reach it.
+      - MCP_SOCK=/run/sentineldesk/mcp.sock
+    volumes:
+      - ${NAME}-home:/home/sentineldesk
+      - ${NAME}-run:/run/sentineldesk
+      - ${NAME}-audit:/var/log/sentineldesk
+      - ${NAME}-work:/tmp/sentineldesk
+    shm_size: "2gb"
+YAML
+
 if [ "$ENABLE_VPN" -eq 1 ]; then
-    RUN+=(--cap-add NET_ADMIN --device /dev/net/tun)
+cat <<'YAML'
+    # --vpn was given: the built-in OpenVPN client needs both of these.
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+YAML
 fi
-RUN+=("$IMAGE:$TAG")
-"${RUN[@]}" >/dev/null
 
-# --- Done --------------------------------------------------------------------
+if [ "$WITH_AGENT" -eq 1 ]; then
+cat <<YAML
+
+  # The agent: the brain that talks to the model providers and drives the
+  # desktop. depends_on is deliberately absent — it waits for the desktop and
+  # reconnects when it comes back, so the desktop runs perfectly well with this
+  # service never started at all:  docker compose up -d sentineldesk
+  agent:
+    image: ${AGENT_IMAGE}:${AGENT_TAG}
+    container_name: ${NAME}-agent
+    restart: unless-stopped
+    environment:
+      - MCP_SOCK=/run/sentineldesk/mcp.sock
+    volumes:
+      - ${NAME}-run:/run/sentineldesk
+      # The agent's whole home: its model choice, its keys, its history — and
+      # any vendor CLI it drives a model through, which installs into
+      # ~/.local/bin with credentials in its own dotfiles. A volume covering
+      # only .sentineldesk would keep the preference and lose the tool.
+      - ${NAME}-agent:/home/agent
+YAML
+fi
+
+# The names are PINNED. Compose otherwise prefixes them with the project name,
+# and an agent on the HOST looks for a volume literally called
+# '${NAME}-run' to find the socket.
+cat <<YAML
+
+volumes:
+  ${NAME}-home:
+    name: ${NAME}-home
+  ${NAME}-run:
+    name: ${NAME}-run
+  ${NAME}-audit:
+    name: ${NAME}-audit
+  ${NAME}-work:
+    name: ${NAME}-work
+YAML
+
+if [ "$WITH_AGENT" -eq 1 ]; then
+cat <<YAML
+  ${NAME}-agent:
+    name: ${NAME}-agent
+YAML
+fi
+} > "$COMPOSE"
+
+# --- Bring it up -------------------------------------------------------------
+[ "$PULL" -eq 1 ] && { log "pulling images…"; docker compose -f "$COMPOSE" pull -q || true; }
+
+log "starting SentinelDesk…"
+docker compose -f "$COMPOSE" up -d >/dev/null
+
+# --- Done ---------------------------------------------------------------------
+# What to say about the agent depends on whether one was started, and saying
+# nothing when it was is how somebody never finds out they have to pick a model.
+if [ "$WITH_AGENT" -eq 1 ]; then
+    AGENT_NOTE="    agent     ${AGENT_IMAGE}:${AGENT_TAG}  (container ${NAME}-agent)
+
+  The agent has no model yet — that is deliberate, the key is not something an
+  installer should hold. Open a session in its container and type /connect:
+
+    docker exec -it ${NAME}-agent sentineldesk-agent
+
+  The chat panel in the browser goes from amber to green on its own. /help in
+  that session lists everything you can type."
+else
+    AGENT_NOTE="    agent     not started (--no-agent). Add one later by removing that flag
+              and re-running this installer, or run sentineldesk-agent -serve
+              on this host — it finds the socket in the ${NAME}-run volume."
+fi
+
 # Ask Docker where the volume landed rather than assuming /var/lib/docker:
 # rootless Docker, a custom data-root and snap packages all put it elsewhere.
 # The default is only the fallback for the case where the question fails.
@@ -197,7 +339,7 @@ cat <<EOF
     user      ${AUTH_USER}
     password  ${AUTH_PASS}${GENERATED:+   (generated — save it)}
     image     ${IMAGE}:${TAG}
-
+${AGENT_NOTE}
   MCP socket (for a host agent — Claude Code, sentineldesk-agent):
     in the '${NAME}-run' volume as mcp.sock. Its host path:
     docker volume inspect -f '{{.Mountpoint}}/mcp.sock' ${NAME}-run
@@ -207,8 +349,10 @@ cat <<EOF
     {"mcpServers":{"sentineldesk":{"command":"sudo","args":["socat","STDIO",
      "UNIX-CONNECT:${MCP_SOCK_HOST}"]}}}
 
-  Logs:     docker logs -f ${NAME}
-  Stop:     docker rm -f ${NAME}      (the home volume '${NAME}-home' is kept)
-  Upgrade:  re-run this installer
+  Logs:     docker compose -f ${COMPOSE} logs -f
+  Status:   docker compose -f ${COMPOSE} ps
+  Stop:     docker compose -f ${COMPOSE} down        (the volumes are kept)
+  Upgrade:  docker compose -f ${COMPOSE} pull && docker compose -f ${COMPOSE} up -d
 
+  The stack file is ${COMPOSE} — edit it and re-apply with \`up -d\`.
 EOF

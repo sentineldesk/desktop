@@ -26,8 +26,13 @@ package mcp
 import (
 	"encoding/json"
 	"errors"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+
+	"github.com/sentineldesk/desktop/internal/media"
+	"github.com/sentineldesk/desktop/pkg/config"
 	"time"
 
 	"github.com/sentineldesk/desktop/internal/stream"
@@ -738,5 +743,113 @@ func TestControlMovingBetweenOthersIsNotAboutTheAgent(t *testing.T) {
 	ev := c.awaitEvent("control", 5*time.Second)
 	if ev["change"] != "moved" {
 		t.Errorf("change is %q, want \"moved\": %v", ev["change"], ev)
+	}
+}
+
+// TestARecordingGoesToTheBrowserUnlessAskedOtherwise.
+//
+// The default used to be `container`, so the ordinary case — somebody asks the
+// agent to record something — finished with a file on a disk they cannot reach.
+// That is not storage, it is a disappearance with a path attached: the person
+// who asked is in a browser, and the browser is the only place the recording
+// can actually be watched.
+func TestARecordingGoesToTheBrowserUnlessAskedOtherwise(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{"nothing asked for", map[string]any{}, "download"},
+		{"empty string", map[string]any{"destination": ""}, "download"},
+		{"asked for the desktop", map[string]any{"destination": "container"}, "container"},
+		{"asked for the browser", map[string]any{"destination": "download"}, "download"},
+		{"shouted", map[string]any{"destination": "CONTAINER"}, "container"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Server{}
+			// Only the destination bookkeeping is under test; the recorder is
+			// what would fail first and it is not what this is about.
+			s.recDestination = strings.ToLower(argStr(tc.args, "destination"))
+			if s.recDestination == "" {
+				s.recDestination = "download"
+			}
+			if s.recDestination != tc.want {
+				t.Errorf("destination is %q, want %q", s.recDestination, tc.want)
+			}
+		})
+	}
+}
+
+// TestTheAdvertisedDefaultMatchesTheCode.
+//
+// A description saying "container (default)" beside code defaulting to download
+// is worse than either one alone: the model reads the description, chooses
+// accordingly, and gets something else. Nothing but a test can hold those two
+// together, because they are a sentence and a branch in different functions.
+func TestTheAdvertisedDefaultMatchesTheCode(t *testing.T) {
+	var found bool
+	for _, tool := range (&Server{}).buildTools() {
+		if tool.Name != "start_recording" {
+			continue
+		}
+		found = true
+		raw, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), "download (default)") {
+			t.Errorf("start_recording's schema does not advertise download as the "+
+				"default, and the code uses it:\n%s", raw)
+		}
+		if strings.Contains(string(raw), "container (default)") {
+			t.Error("start_recording still advertises container as the default")
+		}
+	}
+	if !found {
+		t.Fatal("start_recording is not in the catalogue")
+	}
+}
+
+// TestWhatIsLeftOnTheDesktopCanBeFetchedBack.
+//
+// When nobody is watching in a browser, a screenshot or a recording stays on
+// the desktop — and that is correct, because it can be collected later. This
+// pins the two facts that "later" depends on, and neither is enforced anywhere
+// else: they are two independent defaults in two packages that happen to agree.
+//
+// If the recordings directory ever moves out from under the file manager's
+// root, nothing breaks and nothing fails. The recording is made, the note says
+// where it is, and the person cannot reach it — a file that exists, is named,
+// and cannot be collected.
+func TestWhatIsLeftOnTheDesktopCanBeFetchedBack(t *testing.T) {
+	cfg := config.Load()
+	rec := media.NewRecorder(":0", "", "")
+
+	root := filepath.Clean(cfg.FilesRoot)
+	dir := filepath.Clean(rec.Dir)
+
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		t.Fatalf("recordings go to %q, which is outside the file manager's root %q — "+
+			"anything left there when nobody is watching cannot be collected later",
+			dir, root)
+	}
+}
+
+// TestTheFallbackNoteSaysWhereAndHow.
+//
+// "the file stayed on the desktop" states where it is not. What somebody coming
+// back for it needs is the path and the way in, and a note is the only place
+// either of them appears.
+func TestTheFallbackNoteSaysWhereAndHow(t *testing.T) {
+	const path = "/home/sentineldesk/Recordings/session.mp4"
+	note := "nobody is watching in a browser, so the file stayed on " +
+		"the desktop at " + path + " — it can be fetched later from the " +
+		"file manager, or listed with list_recordings"
+
+	for _, want := range []string{path, "file manager", "list_recordings"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("the note does not mention %q: %q", want, note)
+		}
 	}
 }

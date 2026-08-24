@@ -375,10 +375,89 @@ func (s *Server) buildSecretTools() []toolDef {
 				"reference it and let it be used.",
 			InputSchema: schema(map[string]any{}),
 		},
+		{
+			Name:            "type_secret",
+			Risk:            riskWrite,
+			Visibility:      visInjects,
+			RequiresControl: true,
+			Description: "Type a secret into a field on screen by ref, without ever seeing it. " +
+				"For a login form, where {{secret:name}} cannot help because the value has to " +
+				"become keystrokes rather than an environment variable. The value is written " +
+				"straight into the element and is never returned to you, never logged and never " +
+				"put on the shared screen as text. A name the vault does not hold is not a " +
+				"failure: the people here are asked to type it. Find the ref with ui_find first, " +
+				"and never fall back to type_text with the value written out.",
+			InputSchema: schema(map[string]any{
+				"name": pStr("the secret's name, as secret_list reports it"),
+				"ref":  pStr("element ref of the field, from ui_find"),
+			}, "name", "ref"),
+		},
 	}
 }
 
-func (s *Server) dispatchSecrets(name string, _ map[string]any) ([]map[string]any, bool, bool) {
+// typeSecret writes a secret into an element without the value passing through
+// anything the agent can read.
+//
+// The ref is REQUIRED and that is the load-bearing half. Typing "the secret"
+// with no target sends it wherever focus happens to be, and focus is not a
+// property this tool controls — a dialog that stole it between ui_find and here
+// would receive somebody's password. So the value goes to a named element or it
+// does not go.
+func (s *Server) typeSecret(args map[string]any) ([]map[string]any, bool) {
+	name := strings.TrimSpace(argStr(args, "name"))
+	ref := strings.TrimSpace(argStr(args, "ref"))
+	if name == "" {
+		return textContent("type_secret needs the `name` of a secret"), true
+	}
+	if ref == "" {
+		return textContent("type_secret needs a `ref` — find the field with ui_find first. " +
+			"Without one the value would go to whatever holds focus, which is how a " +
+			"password ends up in the wrong box."), true
+	}
+
+	value, ok := s.vault.lookup(name)
+	if !ok {
+		// A name with nothing behind it is a question, exactly as it is for a
+		// command reference. See askForSecrets.
+		if err := s.askForSecrets([]string{name}, "typing it into a field on screen"); err != nil {
+			return textContent("%s", err.Error()), true
+		}
+		if value, ok = s.vault.lookup(name); !ok {
+			return textContent("nobody supplied %q", name), true
+		}
+	}
+
+	if err := s.typeSecretInto(ref, value); err != nil {
+		// The error is the tool's, not the value's: a11y failures name the ref
+		// and never echo what was being written.
+		return textContent("could not type into %s: %v", ref, err), true
+	}
+	// What comes back names the secret and the field and nothing else. The
+	// length is not reported either: it is a fact about the value, and a
+	// character count narrows a guess more than nothing does.
+	return textContent(
+		"typed the secret %q into %s. Its value was not shown to you and is not in any log.",
+		name, ref), false
+}
+
+// typeSecretInto is the keystrokes, behind a seam so a test can watch what would
+// have been typed without an accessibility bridge or a display.
+func (s *Server) typeSecretInto(ref, value string) error {
+	if s.typeInto != nil {
+		return s.typeInto(ref, value)
+	}
+	_, isErr := s.a11y("settext", "--ref", ref, "--text", value)
+	if isErr {
+		return fmt.Errorf("the accessibility bridge refused the write")
+	}
+	return nil
+}
+
+func (s *Server) dispatchSecrets(name string, args map[string]any) ([]map[string]any, bool, bool) {
+	if name == "type_secret" {
+		c, isErr := s.typeSecret(args)
+		return c, isErr, true
+	}
 	if name != "secret_list" {
 		return nil, false, false
 	}

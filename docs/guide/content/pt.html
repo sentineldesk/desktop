@@ -188,104 +188,113 @@
       alcançável. <code>--help</code> lista todas as opções.</p>
     </div>
 
-    <div class="tab" data-label="docker run">
-      <p>Menor, para uma olhada rápida. Sem TURN, então funciona numa LAN ou no
-      Linux mas pode não conectar através de um NAT restritivo.</p>
-<pre><code>docker run -d --name sentineldesk \
-  -p 8080:8080 -p 59000-59049:59000-59049/udp \
-  -e AUTH_USER=admin -e AUTH_PASS=troque-me \
-  -e WEBRTC_MIN_PORT=59000 -e WEBRTC_MAX_PORT=59049 \
-  -v sentineldesk-home:/home/sentineldesk \
-  -v sentineldesk-run:/run/sentineldesk \
-  -e MCP_SOCK=/run/sentineldesk/mcp.sock \
-  --shm-size 2g \
-  --cap-add NET_ADMIN --device /dev/net/tun \
-  cnsoluciones/sentineldesk:latest</code></pre>
-      <p>Por essa faixa UDP viaja a mídia do WebRTC. Publicá-la e fixá-la com as
-      duas variáveis é o que faz a conexão funcionar sem usar a rede do
-      host.</p>
-
-      <p>O volume <code>sentineldesk-run</code> e <code>MCP_SOCK</code> expõem o
-      socket MCP do agente fora do contêiner, então um agente no host — Claude
-      Code, ou <code>sentineldesk-agent</code> — pode conduzir a área de trabalho
-      diretamente, sem <code>docker exec</code>. Deixe-os de fora e o socket
-      permanece privado ao contêiner.</p>
-
-      <p><b>Assistir de outra máquina</b> — Docker numa VM ou num servidor, e
-      o navegador em outra máquina da LAN — precisa de mais uma variável. Por
-      padrão o contêiner anuncia ao WebRTC seu endereço interno da bridge, que
-      nenhuma outra máquina alcança, e a página fica parada em “Establishing
-      WebRTC”. <code>NAT1TO1_IP</code> diz qual é a sua face externa — e
-      colocar o mesmo endereço em <code>TLS_HOSTS</code> o inclui no
-      certificado:</p>
-<pre><code>docker run -d --name sentineldesk \
-  -p 8080:8080 -p 59000-59049:59000-59049/udp \
-  -e AUTH_USER=admin -e AUTH_PASS=troque-me \
-  -e WEBRTC_MIN_PORT=59000 -e WEBRTC_MAX_PORT=59049 \
-  -e NAT1TO1_IP=192.168.0.100 \
-  -e TLS_HOSTS=192.168.0.100 \
-  -v sentineldesk-home:/home/sentineldesk \
-  -v sentineldesk-run:/run/sentineldesk \
-  -e MCP_SOCK=/run/sentineldesk/mcp.sock \
-  --shm-size 2g \
-  --cap-add NET_ADMIN --device /dev/net/tun \
-  cnsoluciones/sentineldesk:latest</code></pre>
-      <p><code>192.168.0.100</code> representa a máquina onde o Docker roda —
-      use o endereço real dela na LAN, e abra
-      <code>https://192.168.0.100:8080</code>.</p>
-
-      <div class="note">
-        <b>HTTPS é o padrão</b>
-        <p>A área de trabalho serve TLS de fábrica: sem configurar nada, ela
-        gera um certificado autoassinado uma única vez, guarda no volume do
-        home, e o navegador pede para aceitá-lo exatamente uma vez. Seu
-        próprio certificado vence via <code>TLS_CERT</code>/<code>TLS_KEY</code>.
-        É mais que o cadeado: os navegadores só habilitam o microfone e a área
-        de transferência rica em origens seguras, então uma área de trabalho
-        alcançada por HTTP puro perdia recursos em silêncio.</p>
-        <p>Para terminar TLS você mesmo com um reverse proxy na frente —
-        nginx, Caddy, <a href="https://nginxproxymanager.com/">Nginx Proxy
-        Manager</a> — defina <code>TLS_SELFSIGNED=0</code>: o backend fala
-        HTTP puro com o proxy e o proxy serve o certificado dele.</p>
-      </div>
-
-      <p>As duas últimas linhas são o que
-      <a href="#whats-installed-vpn">o cliente de VPN</a> precisa: um dispositivo
-      de túnel e a capacidade de configurar rotas. Sem as duas, o OpenVPN instala
-      bem e só falha no momento em que alguém realmente precisa dele. Remova-as
-      num deploy que nunca vai discar uma VPN — <code>NET_ADMIN</code> deixa o
-      contêiner administrar a própria pilha de rede, o que é uma concessão
-      real.</p>
-
-      <div class="note">
-        <b>Onde foi parar <code>seccomp=unconfined</code></b>
-        <p>Versões anteriores desta página passavam
-        <code>--security-opt seccomp=unconfined</code>, e os arquivos compose
-        também o definiam. Nenhum dos dois faz mais isso. Existia por causa do
-        <b>Steam</b>, cujo bootstrap precisa de user namespaces que o perfil
-        padrão do Docker bloqueia, e o Steam só está na
-        <a href="#whats-installed">imagem full em amd64</a>. Ele amplia o que o
-        contêiner pode pedir ao kernel, e isso não se deixa ligado por um recurso
-        que a maioria das instalações nunca inicia.</p>
-        <p>Tem outro efeito que vale conhecer, na direção oposta: <b>com</b> ele,
-        o Chromium mantém o próprio sandbox. O contêiner testa os user namespaces
-        na inicialização e acrescenta <code>--no-sandbox</code> apenas quando
-        eles faltam, então o normal é um navegador sem sandbox — como sempre foi.
-        Nem o protocolo DevTools nem a árvore de acessibilidade mudam em qualquer
-        dos casos, então as ferramentas <code>browser_*</code> e
-        <code>ui_*</code> se comportam igual.</p>
-      </div>
-    </div>
-
     <div class="tab" data-label="docker compose">
-      <p>A mesma imagem publicada, para quem prefere compose. Baixe o arquivo e
+      <p>As imagens publicadas, dois serviços, um comando. Baixe o arquivo e
       suba — sem clonar, sem compilar:</p>
 <pre><code>curl -fsSLO https://raw.githubusercontent.com/sentineldesk/desktop/main/docker-compose.yml
-AUTH_PASS=mude-me HOST_IP=192.168.0.100 docker compose up -d</code></pre>
-      <p>Defina <code>SENTINELDESK_TAG=full</code> para a imagem full, e
-      <code>HOST_IP</code> com o endereço pelo qual os navegadores alcançam este
-      host (seu IP de LAN ou público). O compose nomeia
-      <code>cnsoluciones/sentineldesk</code> diretamente.</p>
+AUTH_PASS=cambiame HOST_IP=192.168.0.100 docker compose up -d</code></pre>
+
+      <p><code>HOST_IP</code> es la dirección por la que los navegadores llegan a
+      esta máquina — su IP de la LAN, o la pública en un VPS. Fuera de localhost
+      es obligatoria y no opcional: si no, WebRTC anuncia la IP del bridge del
+      contenedor, que nada de afuera alcanza, y la página se queda en
+      «Estableciendo WebRTC» con el video en negro. Después abrí
+      <code>https://192.168.0.100:8080</code>.</p>
+
+      <p>Poné <code>SENTINELDESK_TAG=full</code> para la
+      <a href="#install-images">imagen pesada</a>.</p>
+
+      <h4>Qué levanta</h4>
+      <table>
+        <tr><th>servicio</th><th>contenedor</th><th>qué es</th></tr>
+        <tr><td><code>sentineldesk</code></td><td><code>sentineldesk</code></td>
+            <td>el escritorio: X, el navegador, las apps, el stream WebRTC, el servidor MCP</td></tr>
+        <tr><td><code>agent</code></td><td><code>sentineldesk-agent</code></td>
+            <td>el runtime que lo maneja — el cerebro detrás del panel de chat</td></tr>
+      </table>
+
+      <p><b>El agente es opcional</b>, y nombrar al escritorio es cómo se dice
+      eso:</p>
+<pre><code>docker compose up -d                # el escritorio y un agente al lado
+docker compose up -d sentineldesk   # el escritorio solo</code></pre>
+      <p>El escritorio no tiene <code>depends_on</code> ni ningún vínculo con el
+      agente, así que la segunda línea es un despliegue completo y no uno
+      mutilado. El orden tampoco importa: si arranca primero, el agente espera al
+      escritorio y se reconecta cuando vuelve.</p>
+
+      <h4>Cómo se unen los dos</h4>
+      <p>Un volumen, <code>sentineldesk-run</code>, con sockets Unix y montado en
+      ambos. Ese es el <b>único</b> vínculo entre ellos. El agente no tiene
+      puertos ni red propia, así que nada de la conversación sale de esta
+      máquina — y el agente solo puede hacer lo que ese socket concede, que es
+      por qué acá hay un borde de seguridad y no dos.</p>
+
+      <table>
+        <tr><th>volumen</th><th>qué guarda</th></tr>
+        <tr><td><code>sentineldesk-home</code></td><td>perfiles del navegador, archivos, el certificado TLS</td></tr>
+        <tr><td><code>sentineldesk-audit</code></td><td>el registro de acciones — aparte, para que borrar un perfil nunca se lleve el registro</td></tr>
+        <tr><td><code>sentineldesk-agent</code></td><td>el modelo elegido, las claves y el historial del agente</td></tr>
+        <tr><td><code>sentineldesk-work</code></td><td>espacio temporal para capturas y grabaciones en curso</td></tr>
+      </table>
+
+      <h4>Comandos de todos los días</h4>
+<pre><code>docker compose ps                      # qué está arriba
+docker compose logs -f sentineldesk    # seguir el escritorio
+docker compose logs -f agent           # seguir el agente
+docker compose restart agent           # reiniciar un servicio
+docker compose down                    # parar ambos, conservar los volúmenes
+docker compose pull &amp;&amp; docker compose up -d    # actualizar en el lugar</code></pre>
+      <p><code>down</code> no toca los volúmenes, así que el home, el registro y
+      las claves del agente sobreviven. Para empezar realmente de cero, borralos
+      por nombre — y leelo como el comando destructivo que es:
+      <code>docker volume rm sentineldesk-home sentineldesk-agent</code>.</p>
+
+      <h4>Configurarlo</h4>
+      <p>Compose lee un <code>.env</code> al lado del archivo, que es el lugar
+      más prolijo para lo que si no repetirías en la línea de comandos:</p>
+<pre><code>AUTH_USER=admin
+AUTH_PASS=una-clave-de-verdad
+HOST_IP=192.168.0.100
+SENTINELDESK_TAG=latest        # o `full`
+TZ=America/Argentina/Buenos_Aires
+KEYBOARD_LAYOUT=latam
+HTTP_PORT=8080</code></pre>
+      <p>Todas tienen un valor por defecto; solo <code>AUTH_PASS</code> y
+      <code>HOST_IP</code> conviene fijarlas antes de que alguien más pueda
+      llegar al despliegue.</p>
+
+      <div class="note">
+        <b>HTTPS viene por defecto</b>
+        <p>El escritorio sirve TLS de fábrica: sin configurar nada genera un
+        certificado autofirmado una vez, lo guarda en el volumen del home, y el
+        navegador te pide aceptarlo exactamente una vez. Tu propio certificado
+        gana con <code>TLS_CERT</code>/<code>TLS_KEY</code>. Es más que el
+        candadito: los navegadores solo permiten el micrófono y el portapapeles
+        rico en orígenes seguros, así que un escritorio por HTTP plano perdía
+        funciones en silencio.</p>
+        <p>Para terminar TLS vos mismo con un proxy adelante — nginx, Caddy,
+        <a href="https://nginxproxymanager.com/">Nginx Proxy Manager</a> — poné
+        <code>TLS_SELFSIGNED=0</code> para que el backend hable HTTP plano con el
+        proxy.</p>
+      </div>
+
+      <h4>Un relay para redes hostiles</h4>
+      <p>El peer-to-peer falla en NAT simétrica y donde se descarta UDP. Hay un
+      servicio TURN en el archivo, apagado por defecto, porque un relay lleva
+      cada cuadro de cada sesión por adentro y pagar eso cuando nadie lo necesita
+      es el intercambio equivocado:</p>
+<pre><code>docker compose --profile turn up -d</code></pre>
+      <p>Poné <code>CLIENT_TURN_URLS</code> en el escritorio cuando esté
+      corriendo, o a los navegadores nunca se les dice que el relay existe.</p>
+
+      <h4>La VPN incorporada</h4>
+      <p>El escritorio puede discar OpenVPN, que necesita un dispositivo túnel y
+      la capacidad de configurar rutas. Los dos están comentados en el compose —
+      descomentá <code>cap_add: NET_ADMIN</code> y
+      <code>devices: /dev/net/tun</code> en el servicio
+      <code>sentineldesk</code>. <code>NET_ADMIN</code> deja al contenedor
+      manejar su propia pila de red, que es un permiso real, así que dejalo
+      apagado en un despliegue que nunca vaya a discar una.</p>
     </div>
 
     <div class="tab" data-label="Do código">
@@ -331,10 +340,10 @@ docker build -f deploy/Dockerfile --target desktop -t sentineldesk:latest .</cod
   </table>
 
   <p>Para rodar a full, aponte para essa tag — uma palavra em
-  <code>docker run</code>, <code>SENTINELDESK_TAG=full</code> com compose, ou
+  <code>SENTINELDESK_TAG</code> com compose, ou
   <code>--full</code> com o instalador:</p>
 
-<pre><code>docker run -d --name sentineldesk … cnsoluciones/sentineldesk:full</code></pre>
+<pre><code>SENTINELDESK_TAG=full docker compose up -d</code></pre>
 
   <div class="note">
     <b>A full é construída em cima da lite</b>
@@ -449,6 +458,8 @@ docker rm -f sentineldesk</code></pre>
     <tr><td><code>MCP_POLICY</code></td><td>full</td><td><code>full</code>, <code>approve</code> (as ferramentas perigosas perguntam à sala), <code>safe</code> (sem as ferramentas que executam código ou tocam o sistema), <code>readonly</code></td></tr>
     <tr><td><code>MCP_DENY</code> / <code>MCP_ALLOW</code></td><td>—</td><td>Padrões, para um controle mais fino que os quatro níveis</td></tr>
     <tr><td><code>AGENT_NAME</code></td><td>AI agent</td><td>O nome com que o agente aparece na lista de participantes</td></tr>
+    <tr><td><code>AGENT_ENABLED</code></td><td>1</td><td>O painel de chat do agente. Em <code>0</code> a área de trabalho inicia igual e o painel informa que não está disponível</td></tr>
+    <tr><td><code>AGENT_SOCK</code></td><td>ao lado de <code>MCP_SOCK</code></td><td>O socket que o runtime do agente disca. Derivado do de MCP por padrão — mesmo diretório, nome próprio — para que realocar um realoque os dois</td></tr>
   </table>
 
   <h3 id="config-tuning">Ajuste fino</h3>
@@ -698,6 +709,46 @@ docker volume rm sentineldesk-home</code></pre>
     num erro, pedir ao agente que olhe, e o agente lê o que realmente aconteceu
     em vez de ouvir um relato.</p>
   </div>
+</section>
+
+<section id="agent-chat" data-track="use">
+  <h2>Falar com o agente pelo navegador</h2>
+
+  <p>O botão redondo no topo da barra abre um chat ao lado da área de trabalho:
+  a tela se divide, a área de trabalho à esquerda e a conversa à direita. Você
+  pede algo com suas palavras, o agente trabalha, e você vê o que ele faz
+  <b>enquanto</b> ele faz — cada ferramenta que ele chama aparece sob a
+  resposta, alinhada com o que se move na tela ao lado.</p>
+
+  <p>O ponto no botão diz se há com quem falar antes de você apertá-lo: verde
+  pronto, âmbar em execução mas sem modelo configurado, cinza não está.</p>
+
+  <h3 id="agent-chat-install">É preciso ter o agente</h3>
+  <p>A área de trabalho funciona sozinha; o agente é opcional e vive em
+  <a href="https://github.com/sentineldesk/agent">seu próprio repositório</a>. O
+  painel distingue três situações e para cada uma mostra o comando que a
+  resolve — não instalado, instalado mas não em execução, ou em execução sem
+  modelo. Copie a linha, execute, e o painel fica verde sozinho: nada para
+  recarregar.</p>
+
+  <div class="note">
+    <b>A área de trabalho nunca depende dele</b>
+    <p>Um agente ausente, uma chave de API vencida, um loop que não termina:
+    cada um custa o painel de chat e nada mais. A área de trabalho inicia igual,
+    a sessão continua, e reiniciar o agente não toca nem o vídeo nem quem estiver
+    assistindo. Com <code>AGENT_ENABLED=0</code> o plano inteiro fica desligado.</p>
+  </div>
+
+  <h3 id="agent-chat-control">Trabalha em automático, e mesmo assim pede o controle</h3>
+  <p>Pelo chat o agente age sem perguntar a cada passo — é para isso que ele
+  existe. O que não muda é a regra da área de trabalho: <b>se você está no
+  comando, ele tem que pedir</b>, com o mesmo aviso de sempre. E quando decide
+  consultar você antes de fazer algo, pergunta no chat, onde você está olhando.</p>
+
+  <h3 id="agent-chat-history">Um único histórico</h3>
+  <p>As conversas do painel e as do terminal são as mesmas: ficam guardadas na
+  mesma base e o botão de histórico lê essa. Uma tarefa que você começou
+  digitando no terminal aparece no navegador, e vice-versa.</p>
 </section>
 
 <section id="capture-recording" data-track="use">
@@ -1086,6 +1137,127 @@ lsof -nP -iUDP:5000</code></pre>
   Context Protocol, de modo que um host de IA que as entenda pode decidir
   sozinho quando perguntar antes de agir — sem saber nada sobre o
   SentinelDesk.</p>
+</section>
+
+<section id="tui" data-track="use">
+  <h2>A TUI: usar o agente a partir de um terminal</h2>
+
+  <p>El panel de chat del navegador es una cara del agente. La otra es una sesión
+  de terminal, y es la que tiene todo: el selector de modelo, el panel de costos,
+  los pedidos de aprobación. Abrila en el contenedor del agente:</p>
+
+<pre><code>docker exec -it sentineldesk-agent sentineldesk-agent</code></pre>
+
+  <p>Sin argumentos encuentra el socket, abre una sesión y espera. Cada tarea que
+  escribís conserva el contexto de la anterior, así que es una conversación y no
+  una serie de preguntas sueltas. Las dos caras son vistas de la misma sesión: lo
+  que hacés acá aparece en el panel del navegador.</p>
+
+  <h3 id="tui-commands">O que você pode escrever</h3>
+  <p>Todo lo que no sea un comando con barra se le manda al agente — como tarea
+  nueva, o como corrección si ya hay una corriendo. Escribir <code>/</code> abre
+  una paleta que autocompleta, así que no hay que memorizar nada.</p>
+
+  <table>
+    <tr><th>comando</th><th></th></tr>
+    <tr><td><code>/help</code></td><td>qué podés escribir acá</td></tr>
+    <tr><td><code>/model</code></td><td>elegir el modelo que responde después — cambia en caliente, sin reiniciar</td></tr>
+    <tr><td><code>/connect</code></td><td>agregar la clave de un proveedor, verificada antes de guardarla</td></tr>
+    <tr><td><code>/panel</code> · <code>ctrl+b</code></td><td>el contexto, los tokens y el costo de la sesión</td></tr>
+    <tr><td><code>/compact</code></td><td>plegar la conversación vieja en un resumen</td></tr>
+    <tr><td><code>/rewind</code> · <code>/undo</code></td><td>volver a antes de una tarea — <b>a área de trabalho NÃO volta</b></td></tr>
+    <tr><td><code>/memory</code></td><td>que se recuerde algo, permanentemente</td></tr>
+    <tr><td><code>/stop</code> · <code>ctrl-c</code></td><td>terminar la corrida después de este turno</td></tr>
+    <tr><td><code>/language</code></td><td>el idioma de la interfaz</td></tr>
+    <tr><td><code>/exit</code> · <code>ctrl-d</code></td><td>salir de la sesión</td></tr>
+  </table>
+
+  <p>Los comandos que tu despliegue haya puesto en <code>commands/*.md</code>
+  aparecen también en la paleta — un comando es un prompt guardado con nombre,
+  así que escribirlo se expande a su texto igual que si lo hubieras tipeado.</p>
+
+  <div class="note">
+    <b><code>/rewind</code> move a conversa, não a máquina</b>
+    <p>Vuelve la transcripción a antes de una tarea, que es la salida barata
+    cuando el modelo se fue por el camino equivocado cinco turnos atrás. Lo que
+    no puede es deshacer lo hecho: los paquetes siguen instalados, las ventanas
+    abiertas, los archivos escritos. Al agente se le dice en el mismo aliento, y
+    el registro de auditoría es append-only y no se rebobina — lo que pasó, pasó.
+    Para un undo real de la máquina, tomá antes un punto de restauración con
+    <code>snapshot_create</code>.</p>
+  </div>
+
+  <h3 id="tui-approvals">Aprovar o que ele faz</h3>
+  <p>Arrancá con <code>-mode ask</code> y cada llamada que <i>cambia</i> algo se
+  detiene primero. Las lecturas pasan sin molestar, a propósito: una confirmación
+  por cada captura entrena a la persona a apretar <code>y</code> sin leer, y una
+  confirmación que nadie lee es peor que ninguna.</p>
+
+<pre><code>docker exec -it sentineldesk-agent sentineldesk-agent -mode ask</code></pre>
+
+  <table>
+    <tr><th>tecla</th><th></th></tr>
+    <tr><td><code>y</code></td><td>permitir esta llamada</td></tr>
+    <tr><td><code>n</code></td><td>rechazarla — se le dice al agente que no busque otra vuelta</td></tr>
+    <tr><td><code>a</code></td><td>permitir llamadas <b>como</b> ésta por el resto de la corrida</td></tr>
+    <tr><td><code>t</code></td><td>permitir esta <b>herramienta</b> por el resto, con cualquier argumento</td></tr>
+  </table>
+
+  <p><code>a</code> se ata al nombre entendible del comando, así que aprobar
+  <code>apt install nginx</code> también cubre <code>apt install curl</code> y
+  <b>no</b> cubre <code>rm</code>. Un comando encadenado o con redirección nunca
+  se generaliza: aprobar <code>apt update</code> no puede convertirse en aprobar
+  <code>apt update &amp;&amp; rm -rf /</code>.</p>
+
+  <p>Los permisos viven por la corrida y nunca llegan al disco — uno que
+  sobreviviera a la sesión sobreviviría a la razón por la que alguien lo dio.
+  Cada permiso, y cada llamada posterior que lo usó, quedan en el rastro: «¿por
+  qué no me preguntó?» se responde después.</p>
+
+  <h3 id="tui-bounds">Limitar uma execução</h3>
+<pre><code>sentineldesk-agent -run "instalá nginx y mostrame que anda" \
+  -max-turns 40 -max-spend 0.50 -max-time 10m -mode ask</code></pre>
+  <p><code>-max-turns</code> es un punto de control, no un muro: al llegar se le
+  pregunta al modelo si más pasos terminarían el trabajo, y detrás hay un techo
+  duro que no puede negociar. <code>-max-spend</code> y <code>-max-time</code>
+  son techos — terminan la corrida con lo que tenga, no la apuran.</p>
+
+  <h3 id="tui-history">Ler o que aconteceu</h3>
+<pre><code>sentineldesk-agent -history          # todas las corridas, con turnos, llamadas y costo
+sentineldesk-agent -history 42       # una corrida completa
+sentineldesk-agent -export 42        # la sesión entera por stdout
+sentineldesk-agent -costs            # cuánto se gastó, y en qué
+sentineldesk-agent -resume 42        # retomarla; 0 es la más reciente</code></pre>
+  <p><code>-history &lt;id&gt;</code> muestra el plan del propio modelo al lado de
+  lo que realmente hizo, nombra qué agente actuó cuando se delegó una subtarea, y
+  dice claramente por qué se detuvo — <code>blocked · over-budget</code>, en vez
+  de dejarte inferirlo de un contador de turnos que casualmente da el límite.</p>
+
+  <p><code>-resume</code> redibuja la conversación y le dice al modelo cuánto
+  hace que paró, y que el escritorio siguió corriendo sin él. Eso importa más de
+  lo que suena: esto no es un agente de código retomando archivos que siguen
+  donde los dejó — se cerraron ventanas, alguien más puede tener los controles, y
+  la pantalla que recuerda es una fotografía.</p>
+
+  <h3 id="tui-doctor">Antes de gastar qualquer coisa</h3>
+<pre><code>sentineldesk-agent -doctor                          # 15 chequeos contra el escritorio real, sin modelo
+sentineldesk-agent -tools "auditar el firewall"     # qué se le ofrecería, y su ranking
+sentineldesk-agent -skills                          # las skills encontradas, y de dónde salió cada una
+sentineldesk-agent -providers                       # qué modelos se pueden alcanzar, y qué necesita cada uno</code></pre>
+  <p><code>-doctor</code> es lo primero que hay que correr cuando algo anda mal.
+  Habla con el escritorio real, no involucra modelo y no cuesta nada. Si falla,
+  el problema no es la clave.</p>
+
+  <h3 id="tui-host">Rodar no host</h3>
+  <p>El agente encuentra solo el socket en el volumen
+  <code>sentineldesk-run</code>, así que no tiene por qué estar en un
+  contenedor:</p>
+<pre><code>docker compose up -d sentineldesk   # solo el escritorio
+sentineldesk-agent -serve           # el agente, en el host</code></pre>
+  <p>Es la forma más liviana de trabajar mientras <i>cambiás</i> el agente — no
+  hay imagen que reconstruir entre ediciones. No corras los dos: dos runtimes en
+  un escritorio significa que gana la conexión más nueva y la vieja se cae. No se
+  rompe nada; solo confunde. Elegí uno.</p>
 </section>
 
 <section id="whats-installed" data-track="use">

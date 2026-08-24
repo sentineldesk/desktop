@@ -35,5 +35,14 @@ import "embed"
 
 //go:embed config desktop packages
 //go:embed Dockerfile
-//go:embed docker-compose.dev.yml
 var FS embed.FS
+
+// The compose file is NOT here, and cannot be: it lives at the repository root
+// — one file, the same one somebody downloads and runs by hand — and go:embed
+// refuses a path that climbs out of the package directory.
+//
+// There used to be a second, deploy-local one embedded here, and it was a copy
+// that had already drifted: it never set MCP_SOCK, so a desktop started from it
+// kept its socket inside the container where no agent could reach it. A tree
+// extracted from this binary is meant to build the image; starting it is the
+// root compose file's job, and it is fetched rather than unpacked.

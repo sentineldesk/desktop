@@ -11,8 +11,10 @@ browser_tabs
 browser_text
 browser_type
 browser_wait_for
+browser_wait_until
 check_errors
 close_window
+deliver_recording
 desktop_state
 fill_form
 find_text
@@ -114,6 +116,7 @@ terminal_open
 terminal_read
 terminal_run
 tool_search
+type_secret
 type_text
 ui_at_point
 ui_click

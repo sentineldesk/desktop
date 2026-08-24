@@ -492,6 +492,11 @@ type Server struct {
 	// Values the agent may use and must never see. See secrets.go.
 	vault *vault
 
+	// typeInto writes a secret into an element, behind a seam so a test can
+	// watch what would have been typed without an accessibility bridge or a
+	// display. nil is the real thing. See typeSecretInto.
+	typeInto func(ref, text string) error
+
 	// Credentials spotted leaving, so somebody can be told to rotate them.
 	// See detect.go — it warns and never blocks.
 	creds *credentialWatcher

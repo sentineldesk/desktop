@@ -1,0 +1,820 @@
+/* SentinelDesk
+ * A collaborative operating system for people and AI agents.
+ *
+ * Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+ *
+ * Licensed under the Apache License, Version 2.0.
+ *
+ * This product's name and logo are trademarks of Federico Pereira and are not
+ * covered by the license above. See the README for the trademark policy.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* The chat panel.
+ *
+ * Built on the same --sd-* tokens as the rail and the dialogs, so it inherits
+ * light, dark and the explicit data-theme override without redefining a single
+ * colour. Nothing here picks a hex except the two accent tints, which are
+ * derived from --sd-drive rather than named.
+ *
+ * The shape is NextChat's, narrowed: compact bubbles, history as a drawer that
+ * slides OVER the thread rather than a second column, and a status line in the
+ * header — that last part borrowed from Open WebUI, because "there is no agent"
+ * needs somewhere permanent to live and a clean header has nowhere to put it.
+ */
+
+.panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--chat-w);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--sd-panel);
+  border-left: 1px solid var(--sd-line);
+  backdrop-filter: blur(14px);
+  color: var(--sd-ink);
+  font-size: 13.5px;
+  line-height: 1.5;
+  /* Its own stacking context, so the drawer below can cover the thread without
+     escaping the panel and landing over the desktop. */
+  isolation: isolate;
+  overflow: hidden;
+}
+
+/* --- header ---------------------------------------------------------------- */
+
+.head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 10px 8px;
+  border-bottom: 1px solid var(--sd-line-soft);
+}
+
+.headText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.title {
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: .01em;
+}
+
+/* The status line. It is always present, which is the point: an agent that is
+   missing, running-but-unconfigured or ready all read from the same place
+   instead of the first two being announced by the absence of something. */
+.state {
+  font-size: 11px;
+  color: var(--sd-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: 1px;
+  background: var(--sd-dim);
+}
+.dotReady { background: var(--sd-drive); }
+.dotHalf { background: var(--sd-watch); }
+
+.iconBtn {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sd-ink);
+  cursor: pointer;
+}
+.iconBtn:hover { background: var(--sd-hover); }
+.iconBtn:active { transform: translateY(1px); }
+.iconBtn:focus-visible { outline: 2px solid var(--sd-focus); outline-offset: 1px; }
+.iconBtn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.iconBtn[disabled] { opacity: .4; cursor: not-allowed; }
+
+/* --- thread ---------------------------------------------------------------- */
+
+.thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 12px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overscroll-behavior: contain;
+}
+
+.row { display: flex; }
+.rowHuman { justify-content: flex-end; }
+.rowAgent { justify-content: flex-start; }
+
+.bubble {
+  max-width: 88%;
+  padding: 8px 11px;
+  border-radius: 12px;
+  white-space: pre-wrap;
+  /* A tool argument or a path has no spaces to break at and would otherwise
+     push the panel's own layout sideways. */
+  overflow-wrap: anywhere;
+}
+
+.human {
+  background: var(--sd-drive);
+  color: var(--sd-drive-ink);
+  border-bottom-right-radius: 4px;
+}
+
+.agent {
+  background: var(--sd-hover);
+  border: 1px solid var(--sd-line-soft);
+  border-bottom-left-radius: 4px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.system {
+  width: 100%;
+  max-width: 100%;
+  background: transparent;
+  border: 1px dashed var(--sd-line);
+  color: var(--sd-dim);
+  font-size: 12.5px;
+}
+
+/* The caret on an answer still being written. Reduced-motion turns it into a
+   steady block rather than removing it: it is the only thing on screen saying
+   the agent has not finished. */
+.caret {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  vertical-align: -2px;
+  margin-left: 2px;
+  background: currentColor;
+  opacity: .75;
+  animation: blink 1.1s steps(2, start) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .caret { animation: none; }
+}
+
+/* --- thinking -------------------------------------------------------------- */
+
+/* The monitor, blinking while there is nothing else to show yet. The screen's
+   fill comes up and down rather than the whole icon flashing, because what it
+   is imitating is a display waking. */
+.thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--sd-dim);
+}
+.monitor {
+  width: 15px; height: 15px; flex: none;
+  fill: none; stroke: currentColor;
+  stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+.monitorGlow {
+  stroke: none;
+  fill: currentColor;
+  opacity: .18;
+  animation: screenGlow 1.4s ease-in-out infinite;
+}
+@keyframes screenGlow {
+  0%, 100% { opacity: .07; }
+  50%      { opacity: .42; }
+}
+.elapsed {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  opacity: .85;
+}
+@media (prefers-reduced-motion: reduce) {
+  .monitorGlow { animation: none; opacity: .22; }
+}
+
+/* --- the steps ------------------------------------------------------------- */
+
+/* What the agent DID, between the prose — the difference between watching an
+   agent work and watching a spinner.
+
+   Folded when the run is over and open while it runs (the component decides;
+   see Bubble). Both states are wanted and they are not the same want: watching
+   it work, and later reading what it concluded without twenty lines of tool
+   calls between the question and the answer. */
+.chain {
+  margin-top: 8px;
+  border-top: 1px solid var(--sd-line-soft);
+  padding-top: 6px;
+}
+.chainHead {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--sd-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.chainHead:hover { color: var(--sd-ink); }
+.chev {
+  width: 12px; height: 12px; flex: none;
+  fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  transition: transform .14s ease;
+}
+.chevOpen { transform: rotate(90deg); }
+.chainNow {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  opacity: .8;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chev { transition: none; }
+}
+
+.steps {
+  margin-top: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.step {
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--sd-dim);
+}
+
+.tool {
+  flex: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--sd-ink);
+  opacity: .85;
+}
+
+.detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An interruption is not a tool call and must not read as one: somebody took
+   the controls, which is the single most important thing on the screen when it
+   happens. */
+.stepBreak .tool { color: var(--sd-watch); }
+
+/* --- the footer of one exchange -------------------------------------------- */
+
+.ending {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--sd-line-soft);
+  font-size: 11.5px;
+  color: var(--sd-dim);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.endingWarn { color: var(--sd-watch); }
+.endingBad { color: var(--sd-rec); }
+
+/* --- unavailable ----------------------------------------------------------- */
+
+/* The state that is neither present nor absent gets the same card as the two
+   that are, because what the reader needs is identical in all three: what is
+   wrong, and the one command that fixes it. */
+.gate {
+  margin: 4px 0 8px;
+  padding: 12px;
+  border: 1px solid var(--sd-line);
+  border-radius: 10px;
+  background: var(--sd-surface);
+}
+
+.gateTitle {
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+
+.gateWhy {
+  color: var(--sd-dim);
+  font-size: 12.5px;
+  margin-bottom: 9px;
+}
+
+.remedy {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid var(--sd-line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--sd-bg, rgba(0,0,0,.18));
+}
+
+.remedy code {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  overflow-x: auto;
+  white-space: nowrap;
+  /* The command is the point of the card, so it stays selectable even where
+     the rest of the panel suppresses selection over video. */
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.copy {
+  flex: none;
+  padding: 0 10px;
+  border: 0;
+  border-left: 1px solid var(--sd-line);
+  background: transparent;
+  color: var(--sd-ink);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.copy:hover { background: var(--sd-hover); }
+
+/* --- empty ----------------------------------------------------------------- */
+
+.empty {
+  margin: auto;
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--sd-dim);
+  font-size: 12.5px;
+}
+.emptyTitle {
+  color: var(--sd-ink);
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+/* --- composer -------------------------------------------------------------- */
+
+.composer {
+  flex: none;
+  padding: 10px;
+  border-top: 1px solid var(--sd-line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.box {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  border: 1px solid var(--sd-line);
+  border-radius: 10px;
+  padding: 6px 6px 6px 10px;
+  background: var(--sd-surface);
+}
+.box:focus-within { border-color: var(--sd-focus); }
+
+.input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--sd-ink);
+  font: inherit;
+  line-height: 1.45;
+  max-height: 140px;
+  padding: 3px 0;
+  /* A thin scrollbar in the panel's own colours, once the box has grown as far
+     as it may. The default one is a wide grey slab that belongs to the browser
+     and not to this panel, and on a long paste it was the loudest thing on
+     screen. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--sd-line) transparent;
+  /* The text is what should reach the edge, not the bar. */
+  padding-right: 2px;
+}
+.input::-webkit-scrollbar { width: 7px; }
+.input::-webkit-scrollbar-track { background: transparent; }
+.input::-webkit-scrollbar-thumb {
+  background: var(--sd-line);
+  border-radius: 4px;
+}
+.input::-webkit-scrollbar-thumb:hover { background: var(--sd-dim); }
+.input::placeholder { color: var(--sd-dim); }
+.input:disabled { opacity: .5; cursor: not-allowed; }
+
+.send {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: var(--sd-drive);
+  color: var(--sd-drive-ink);
+  cursor: pointer;
+}
+.send[disabled] { opacity: .35; cursor: not-allowed; }
+.send svg {
+  width: 15px; height: 15px; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--sd-dim);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* --- history drawer -------------------------------------------------------- */
+
+/* Slides OVER the thread instead of taking a column of its own. In 420px there
+   is no second column to give it, and a history that shrinks the conversation
+   to read it is a history nobody opens twice. */
+.drawer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  background: var(--sd-panel);
+  animation: slide .16s ease-out;
+}
+@keyframes slide { from { transform: translateX(-8%); opacity: 0 } }
+@media (prefers-reduced-motion: reduce) {
+  .drawer { animation: none; }
+}
+
+.drawerList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* A row of two buttons rather than one, since the row both opens a
+   conversation and deletes it. The delete is the small one on the right, and it
+   stays out of the way until the row is under the cursor — a column of × marks
+   invites the click this drawer least wants. */
+.session {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+}
+.session:hover { background: var(--sd-hover); }
+.sessionOn { border-color: var(--sd-line); background: var(--sd-hover); }
+
+.sessionOpen {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px 0 0 8px;
+  background: transparent;
+  color: var(--sd-ink);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.sessionDrop {
+  flex: none;
+  width: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 0 8px 8px 0;
+  background: transparent;
+  color: var(--sd-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s ease, color .12s ease;
+}
+.session:hover .sessionDrop,
+.sessionDrop:focus-visible { opacity: 1; }
+.sessionDrop:hover { color: var(--sd-bad, #e5484d); }
+.sessionDrop svg {
+  width: 13px; height: 13px; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round;
+}
+
+.sessionTitle {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sessionMeta {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--sd-dim);
+}
+
+/* A banner while a past conversation is on screen, so nobody mistakes a
+   transcript for the live thread and wonders why the agent is not answering. */
+.viewing {
+  flex: none;
+  padding: 7px 12px;
+  font-size: 11.5px;
+  color: var(--sd-watch);
+  background: var(--sd-hover);
+  border-bottom: 1px solid var(--sd-line-soft);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+.viewing button {
+  border: 0; background: transparent; color: inherit;
+  font: inherit; text-decoration: underline; cursor: pointer; padding: 0;
+}
+
+/* --- the drag handle ------------------------------------------------------- */
+
+/* Six pixels wide and invisible until it is wanted. A visible divider on a
+   panel that already has a border reads as a second border; what makes this
+   findable is the cursor changing, which is the convention every split view
+   uses. The hit area is wider than the line it draws — a 1px target is one
+   people miss. */
+.grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 9px;
+  z-index: 3;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+}
+.grip::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: 3px;
+  width: 3px;
+  background: var(--sd-drive);
+  opacity: 0;
+  transition: opacity .12s ease;
+}
+.grip:hover::after { opacity: .5; }
+
+/* The hint, drawn by this panel rather than by the browser.
+   A `title` attribute produces the operating system's own tooltip: it appears
+   after a delay, in the middle of a drag, at the pointer — over the very thing
+   being resized. This one sits above the handle, appears at once on hover, and
+   disappears the moment a drag starts, because during a drag the width itself
+   is the feedback. */
+.gripHint {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--sd-panel);
+  border: 1px solid var(--sd-line);
+  color: var(--sd-dim);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .12s ease;
+  z-index: 4;
+}
+.grip:hover + .gripHint { opacity: 1; }
+:global(body.chat-resizing) .gripHint { opacity: 0 !important; }
+@media (prefers-reduced-motion: reduce) {
+  .gripHint { transition: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .grip::after { transition: none; }
+}
+
+/* --- deleting -------------------------------------------------------------- */
+
+/* The refusal when somebody else is driving. */
+.denied {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--sd-line);
+  border-radius: 8px;
+  background: var(--sd-hover);
+  font-size: 12px;
+  color: var(--sd-ink);
+}
+.denied span { flex: 1; min-width: 0; }
+.denied button {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--sd-drive);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* The confirmation for emptying the whole ledger. In the flow of the drawer
+   rather than a floating dialog: it is answering a question the person just
+   asked, and a modal over the top hides the list they are deciding about. */
+.confirm {
+  flex: none;
+  margin: 6px;
+  padding: 10px 11px;
+  border: 1px solid var(--sd-line);
+  border-radius: 9px;
+  background: var(--sd-panel);
+}
+.confirmTitle { font-size: 13px; font-weight: 600; }
+.confirmWhy {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--sd-dim);
+  line-height: 1.45;
+}
+.confirmRow {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+.confirmRow button {
+  padding: 5px 11px;
+  border: 1px solid var(--sd-line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sd-ink);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.confirmRow button:hover { background: var(--sd-hover); }
+/* The destructive one is the one that looks destructive, and it is NOT the
+   default: cancel sits first in the tab order for the same reason. */
+.danger {
+  border-color: var(--sd-bad, #e5484d) !important;
+  color: var(--sd-bad, #e5484d) !important;
+}
+
+/* No divider where there is nothing to divide: on a phone the panel is the
+   whole screen (see styles.css) and a drag handle would only ever make it
+   worse. */
+@media (max-width: 640px) {
+  .grip { display: none; }
+}
+
+/* --- the command palette --------------------------------------------------- */
+
+/* Above the composer, not over the thread. It appears while somebody is typing
+   a verb, so it has to sit next to what they are typing — a list that covered
+   the conversation would hide the thing the command is about. */
+.palette {
+  flex: none;
+  margin: 0 0 6px;
+  border: 1px solid var(--sd-line);
+  border-radius: 9px;
+  background: var(--sd-panel);
+  overflow: hidden;
+  max-height: 190px;
+  overflow-y: auto;
+}
+.paletteRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--sd-ink);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.paletteRow:hover { background: var(--sd-hover); }
+.paletteName {
+  flex: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--sd-drive);
+}
+.paletteWhat {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sd-dim);
+  font-size: 12px;
+}
+
+/* --- the terminal ---------------------------------------------------------- */
+
+/* Over the thread rather than beside it: the panel is already the narrow
+   column, and splitting it again would give a terminal forty characters —
+   narrower than the agent's own view lays out for, so every line would wrap and
+   the thing would be unreadable in exactly the situation somebody opened it
+   for. */
+.console {
+  position: absolute;
+  inset: 0;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: var(--sd-panel);
+  /* Not fully opaque at the edges: the chat stays faintly visible behind, which
+     is what says this is a window over the conversation rather than a different
+     place. */
+  backdrop-filter: blur(10px);
+}
+.consoleHead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--sd-line);
+}
+.consoleTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--sd-ink);
+}
+.consoleBody {
+  flex: 1;
+  min-height: 0;
+  padding: 6px;
+  overflow: hidden;
+}
+/* xterm measures its host, so the host has to have a size of its own rather
+   than one it gets from its contents. */
+.consoleBody :global(.xterm) { height: 100%; }
+.consoleBody :global(.xterm-viewport) { overflow: hidden !important; }
+
+/* The header button, while a terminal is open. */
+.iconOn { color: var(--sd-drive); }

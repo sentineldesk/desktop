@@ -158,6 +158,12 @@ type PeerPointers struct {
 	font  xproto.Font
 	peers map[string]*peerWindow
 	fixed map[string]uint32 // identities whose colour is not from the rotation
+
+	// hidden is set while a clean take is being recorded. The pointers are
+	// UNMAPPED rather than destroyed, so they come back where they were with
+	// their names and colours intact — and a peer that moves while hidden
+	// still has its position updated, it simply is not on the screen to see it.
+	hidden bool
 	seq   int
 	ok    bool
 
@@ -288,8 +294,7 @@ func (p *PeerPointers) Set(id, name string, x, y int) {
 		}
 		p.peers[id] = w
 	} else if w.name != name {
-		w.name = name
-		p.draw(w)
+		p.rename(w, name)
 	}
 
 	// Keep it on screen: a pointer half off the edge is worse than one nudged
@@ -297,6 +302,59 @@ func (p *PeerPointers) Set(id, name string, x, y int) {
 	xproto.ConfigureWindow(p.conn, w.win,
 		xproto.ConfigWindowX|xproto.ConfigWindowY|xproto.ConfigWindowStackMode,
 		[]uint32{uint32(int32(x)), uint32(int32(y)), xproto.StackModeAbove})
+	// A pointer that arrives DURING a clean take must not appear in it. create
+	// maps the window as it builds it, which is right in every other case.
+	if p.hidden {
+		xproto.UnmapWindow(p.conn, w.win)
+	}
+	p.conn.Sync()
+}
+
+// Hide takes every pointer off the screen without forgetting it.
+//
+// # What this costs
+//
+// These windows exist so that recordings, screenshots and everyone else's
+// stream show who is driving — see the field this type is stored in. Hiding
+// them gives that up for as long as they are hidden, and not only for the
+// recording: they are real windows on one X display, so a viewer watching live
+// loses them too.
+//
+// That trade is worth OFFERING and not worth taking by default. Somebody
+// recording a video wants the video; somebody watching an agent work wants to
+// see the agent's hand. Only the person who asked for the take knows which of
+// those is happening, so this is reached from an explicit option and restored
+// the moment the recording stops.
+func (p *PeerPointers) Hide() {
+	if p == nil || !p.ok {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.hidden {
+		return
+	}
+	p.hidden = true
+	for _, w := range p.peers {
+		xproto.UnmapWindow(p.conn, w.win)
+	}
+	p.conn.Sync()
+}
+
+// Show puts them back, where they were.
+func (p *PeerPointers) Show() {
+	if p == nil || !p.ok {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.hidden {
+		return
+	}
+	p.hidden = false
+	for _, w := range p.peers {
+		xproto.MapWindow(p.conn, w.win)
+	}
 	p.conn.Sync()
 }
 
@@ -328,6 +386,50 @@ func (p *PeerPointers) Clear() {
 	p.conn.Sync()
 }
 
+// measure works out the tag's size for a name, from the font's real metrics.
+//
+// One place, because it is used twice — building a pointer and renaming one —
+// and the second used to compute nothing at all.
+func (p *PeerPointers) measure(name string) (labelW, labelH, width, height uint16, baseline int16) {
+	ascent, descent := p.fontAscent, p.fontDescent
+	if ascent == 0 {
+		ascent, descent = 10, 3
+	}
+	labelH = uint16(ascent + descent + ptrPadY*2)
+	labelW = uint16(p.textWidth(name)) + ptrPadX*2
+	width = uint16(ptrArrowW/2) + labelW
+	height = uint16(ptrArrowH) + labelH
+	baseline = int16(ptrArrowH) + ptrPadY + ascent
+	return
+}
+
+// rename changes the name on a pointer that already exists — and RESIZES it.
+//
+// # The bug this replaces
+//
+// It used to be two lines: store the name, redraw. Every dimension — the
+// window, the tag, and the SHAPE mask that decides which pixels exist at all —
+// was computed once, in create, from whatever name was known then.
+//
+// A pointer is created by the first movement that arrives, and a name can
+// arrive after it. So a peer whose name landed second kept a tag sized for the
+// name it did NOT have: too narrow, with the real name clipped away by a mask
+// nobody recomputed. What was left looked like a stub — a coloured arrow with a
+// blank bar stuck to it, which is exactly how somebody described it.
+func (p *PeerPointers) rename(w *peerWindow, name string) {
+	w.name = name
+	w.labelW, w.labelH, w.width, w.height, w.baseline = p.measure(name)
+
+	// The window first, then the mask: shaping to a rectangle larger than the
+	// window leaves the extra clipped away, and the tag would grow only as far
+	// as the old bounds.
+	xproto.ConfigureWindow(p.conn, w.win,
+		xproto.ConfigWindowWidth|xproto.ConfigWindowHeight,
+		[]uint32{uint32(w.width), uint32(w.height)})
+	p.shapeWindow(w)
+	p.draw(w)
+}
+
 func (p *PeerPointers) create(id, name string) (*peerWindow, error) {
 	win, err := xproto.NewWindowId(p.conn)
 	if err != nil {
@@ -340,14 +442,7 @@ func (p *PeerPointers) create(id, name string) (*peerWindow, error) {
 	}
 
 	// The tag is sized from the font, not guessed from the character count.
-	ascent, descent := p.fontAscent, p.fontDescent
-	if ascent == 0 {
-		ascent, descent = 10, 3
-	}
-	labelH := uint16(ascent + descent + ptrPadY*2)
-	labelW := uint16(p.textWidth(name)) + ptrPadX*2
-	width := uint16(ptrArrowW/2) + labelW
-	height := uint16(ptrArrowH) + labelH
+	labelW, labelH, width, height, baseline := p.measure(name)
 
 	// override-redirect keeps the window manager out of it: no frame, no focus
 	// stealing, no entry in the task list.
@@ -376,7 +471,7 @@ func (p *PeerPointers) create(id, name string) (*peerWindow, error) {
 
 	w := &peerWindow{id: id, win: win, gc: gc, name: name,
 		width: width, height: height, labelW: labelW, labelH: labelH,
-		colour: colour, baseline: int16(ptrArrowH) + ptrPadY + ascent}
+		colour: colour, baseline: baseline}
 	p.shapeWindow(w)
 	xproto.MapWindow(p.conn, win)
 	p.draw(w)

@@ -1369,5 +1369,5 @@
   "wr.q.auto": "Auto",
   "wr.q.media": "Media",
   "wr.q.high": "Alta",
-  "wr.qualitySet": "Calidad del stream: {{m}}"
+  "wr.qualitySet": "Calidad del stream: {m}"
 }

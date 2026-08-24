@@ -35,6 +35,7 @@ import (
 	"github.com/sentineldesk/desktop/pkg/capability"
 	"github.com/sentineldesk/desktop/pkg/config"
 	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -77,7 +78,11 @@ type Room struct {
 	members    map[string]*roomMember
 	order      []string // arrival order: decides who inherits control
 	controller string
-	seq        int
+
+	// agentDesk is the chat plane, nil when this build or this deployment has
+	// no agent runtime wired in. See SetAgentDesk.
+	agentDesk AgentDesk
+	seq       int
 
 	videoPipe *media.MediaPipeline
 	audioPipe *media.MediaPipeline
@@ -193,6 +198,22 @@ func NewRoom(cfg config.Config, strategy media.EncoderStrategy) *Room {
 // wiring time, before any session exists, which is why it takes no lock.
 func (r *Room) SetCapabilities(c *capability.Catalogue) { r.verbs = c }
 
+// Overlays exposes the who-is-driving pointers to whatever needs them out of
+// the way for a moment — today, a clean recording.
+//
+// Returns a nil INTERFACE when there are none, not a typed nil holding a nil
+// pointer. The two behave differently at a caller's `!= nil`, and the typed one
+// would pass a check that exists to mean "there is something here".
+func (r *Room) Overlays() interface {
+	Hide()
+	Show()
+} {
+	if r == nil || r.pointers == nil {
+		return nil
+	}
+	return r.pointers
+}
+
 // TrackPointer starts broadcasting the REAL X cursor's position to every
 // session, so a viewer can see where whoever is driving — person or agent —
 // actually is.
@@ -287,6 +308,7 @@ func (r *Room) Join(s *Session, video, audio *webrtc.TrackLocalStaticRTP) (strin
 			}
 			if r.controller == id {
 				r.controller = ControlFree
+				r.schedulePointerRefresh()
 			}
 			if r.pointers != nil {
 				r.pointers.Remove(id)
@@ -373,6 +395,7 @@ func (r *Room) Join(s *Session, video, audio *webrtc.TrackLocalStaticRTP) (strin
 		log.Printf("room: %s held control on a dead connection; the controls are free",
 			r.controller)
 		r.controller = ControlFree
+		r.schedulePointerRefresh()
 	}
 	// Whether capture has to start is about the PIPELINE, not the head count.
 	// The agent is a member with no video track, so counting members would
@@ -451,6 +474,7 @@ func (r *Room) LeaveAgent() {
 	}
 	if r.controller == agentID {
 		r.controller = ControlFree
+		r.schedulePointerRefresh()
 	}
 	r.mu.Unlock()
 	if r.pointers != nil {
@@ -659,6 +683,7 @@ func (r *Room) Leave(id string) {
 	// asked for it; FREE is a state anyone can claim when they actually want it.
 	if r.controller == id {
 		r.controller = ControlFree
+		r.schedulePointerRefresh()
 	}
 	// Likewise on the way out: the agent alone in the room is nobody to encode
 	// for, so capture stops when the last member holding a video track leaves.
@@ -930,6 +955,7 @@ func (r *Room) TakeControl(id string) bool {
 	}
 	previous := r.controller
 	r.controller = id
+	r.schedulePointerRefresh()
 	r.mu.Unlock()
 	// The new controller's marker goes away (their pointer is now the real X
 	// pointer); the previous one gets a marker as soon as they move.
@@ -965,6 +991,7 @@ func (r *Room) Abort(by string) {
 	// somewhere that is not in the room should still stop the work.
 	if _, ok := r.members[by]; ok {
 		r.controller = by
+		r.schedulePointerRefresh()
 	}
 	subs := make([]func(string), 0, len(r.abortSubs))
 	for _, fn := range r.abortSubs {
@@ -1020,6 +1047,13 @@ func (r *Room) Notice(kind string, items []string) {
 //
 // Written once so a third broadcaster cannot rediscover either of them.
 func (r *Room) tellEveryone(msg string) {
+	// An empty message is what jsonLine returns when a payload could not be
+	// encoded. Dropped here rather than at each caller, so the one place that
+	// decides who receives is also the one place that decides there is
+	// something to receive.
+	if msg == "" {
+		return
+	}
 	for _, s := range r.receivers() {
 		s.sendOnChannel(msg)
 	}
@@ -1284,6 +1318,7 @@ func (r *Room) ReleaseControl(id string) {
 	// whole point: it releases when it finishes a task and asks again for the
 	// next one, instead of holding the controls between errands.
 	r.controller = ControlFree
+	r.schedulePointerRefresh()
 	r.mu.Unlock()
 	r.broadcastPresence()
 }
@@ -1436,6 +1471,103 @@ func (r *Room) AnswerQuestion(id int, answer string) {
 // already reads as fluid.
 const pointerRate = 40 * time.Millisecond
 
+// sameHand says whether a pointer belongs to the person who is already driving.
+//
+// # What this costs, stated plainly
+//
+// It compares DISPLAY NAMES, because that is the only identity a member has:
+// roomMember carries a session id and a name, and nothing ties two sessions of
+// one person together. So two different people who happen to share a name are
+// treated as one, and while either drives neither gets a marker.
+//
+// That trade was made deliberately. One person with two browsers open is the
+// ordinary case and it looked broken — the same name twice, in two colours,
+// one of them shadowing a hand already on the real pointer. Two strangers with
+// the same display name in one room is not.
+//
+// An empty name matches nothing. Without that guard an unnamed driver would
+// suppress every unnamed viewer, which is the same bug with a worse blast
+// radius.
+func sameHand(driver, who string) bool {
+	driver, who = strings.TrimSpace(driver), strings.TrimSpace(who)
+	if driver == "" || who == "" {
+		return false
+	}
+	return strings.EqualFold(driver, who)
+}
+
+// schedulePointerRefresh re-applies the rule after control changes hands.
+//
+// In a goroutine because every caller is holding r.mu — several by way of a
+// defer — and the refresh takes it for itself. It simply waits for the unlock.
+//
+// Order between two rapid changes does not matter: each refresh reads the
+// CURRENT state under the lock and applies that, so whichever runs last leaves
+// the screen correct regardless of which was asked for first.
+func (r *Room) schedulePointerRefresh() {
+	if r == nil || r.pointers == nil {
+		return
+	}
+	go r.refreshPointers()
+}
+
+// refreshPointers re-applies the who-gets-a-marker rule to everybody at once.
+//
+// # Why this exists at all
+//
+// The rule was evaluated only when a pointer MOVED, which is right until the
+// thing that changed is not the pointer but the control. Somebody who took the
+// controls and then held still kept their marker on screen — a second arrow
+// beside the real one — until they happened to move again. Same on release, in
+// reverse: the marker that should come back does not, until they twitch.
+func (r *Room) refreshPointers() {
+	p := r.pointers
+	if p == nil {
+		return
+	}
+
+	type mark struct {
+		id, name string
+		x, y     int
+		colour   uint32
+		agent    bool
+		hide     bool
+	}
+
+	r.mu.Lock()
+	driver := ""
+	if d, ok := r.members[r.controller]; ok && !d.agent {
+		driver = d.name
+	}
+	alone := len(r.members) < 2
+	marks := make([]mark, 0, len(r.members))
+	for id, m := range r.members {
+		// Never pointed, so there is no position to draw at. Without this a
+		// member who joined and never moved gets an arrow in the top-left
+		// corner, which is a fault report rather than a pointer.
+		if m.lastPtrSent.IsZero() {
+			continue
+		}
+		marks = append(marks, mark{
+			id: id, name: m.name, x: m.ptrX, y: m.ptrY,
+			colour: m.colour, agent: m.agent,
+			hide: id == r.controller || sameHand(driver, m.name),
+		})
+	}
+	r.mu.Unlock()
+
+	for _, mk := range marks {
+		switch {
+		case mk.agent:
+			p.SetColoured(mk.id, mk.name, mk.x, mk.y, desktop.AgentColour)
+		case mk.hide || alone:
+			p.Remove(mk.id)
+		default:
+			p.SetColoured(mk.id, mk.name, mk.x, mk.y, mk.colour)
+		}
+	}
+}
+
 // UpdatePointer records where a participant's pointer is and broadcasts it to
 // the others. This is what makes it visible what someone else is pointing at.
 func (r *Room) UpdatePointer(id string, x, y int) {
@@ -1455,6 +1587,13 @@ func (r *Room) UpdatePointer(id string, x, y int) {
 	colour := m.colour
 	isController := r.controller == id
 	isAgent := m.agent
+	// Who is driving, by name — so a SECOND window belonging to the same person
+	// does not draw a marker for a hand that is already on the X pointer. Read
+	// here, under the lock that owns r.controller.
+	driverName := ""
+	if d, ok := r.members[r.controller]; ok && !d.agent {
+		driverName = d.name
+	}
 	// With a single participant there is nobody to tell.
 	if len(r.members) < 2 {
 		r.mu.Unlock()
@@ -1475,7 +1614,7 @@ func (r *Room) UpdatePointer(id string, x, y int) {
 		switch {
 		case isAgent:
 			p.SetColoured(id, name, x, y, desktop.AgentColour)
-		case isController:
+		case isController, sameHand(driverName, name):
 			p.Remove(id)
 		default:
 			p.SetColoured(id, name, x, y, colour)

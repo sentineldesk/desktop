@@ -15,6 +15,10 @@ import { createRoot } from 'react-dom/client'
 
 import './i18n'
 import './styles.css'
+// The terminal's own stylesheet. Imported once, here, rather than from the
+// component: it is a global sheet and a dynamic import would leave the first
+// frame of a session unstyled.
+import '@xterm/xterm/css/xterm.css'
 import { App } from './App'
 
 createRoot(document.getElementById('root')!).render(

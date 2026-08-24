@@ -403,8 +403,6 @@ which is why opening and closing one require control.
 | `get_recording_status`, `list_recordings` | Status and files |
 | `start_restream`, `stop_restream`, `list_restreams` | Also send the desktop to **RTMP** (YouTube/Twitch/Facebook), **SRT** or **UDP** (VLC/OBS), reusing the live encode |
 
-Full checklist and design notes: [mcp-tools-checklist.md](mcp-tools-checklist.md).
-
 ## Finding tools without loading all of them
 
 A hundred and twenty schemas is a real amount of a model's context, spent

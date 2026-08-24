@@ -296,3 +296,104 @@ func decodeTurn(t *testing.T, turn ChatTurn) map[string]any {
 	}
 	return out
 }
+
+// TestTheHistoryFrameSaysWhichOfTheThreeItIs.
+//
+// agent_history carries one of three things and the panel has to tell them
+// apart from the frame alone: the list of past conversations, one of them
+// opened to read, and the conversation the runtime is IN — sent when somebody
+// continues a past one, or when a terminal attaches and asks what is going on.
+//
+// The rule used to be the session number: 0 meant the list. That reading has no
+// room for the third case, whose session IS 0, and it is why a continued
+// conversation arrived as an empty history drawer instead of as a thread.
+func TestTheHistoryFrameSaysWhichOfTheThreeItIs(t *testing.T) {
+	list := agentHistoryPayload(0, "", []AgentSession{{ID: 24, Title: "a run"}}, nil)
+	if _, ok := list["sessions"]; !ok {
+		t.Error("the list of conversations arrived without a sessions field")
+	}
+	if _, ok := list["messages"]; ok {
+		t.Error("the list of conversations arrived carrying messages")
+	}
+
+	past := agentHistoryPayload(24, "", nil, []AgentHistoryTurn{{Role: "human", Text: "hi"}})
+	if _, ok := past["messages"]; !ok {
+		t.Error("a transcript arrived without its messages")
+	}
+	if _, ok := past["chat"]; ok {
+		t.Error("a transcript being READ named a chat id, which would move the panel into it")
+	}
+
+	live := agentHistoryPayload(0, "resume-24-99", nil, []AgentHistoryTurn{{Role: "human", Text: "hi"}})
+	if _, ok := live["sessions"]; ok {
+		t.Fatal("the LIVE conversation was framed as the sessions list — " +
+			"the panel reads that as an empty history and keeps the old thread")
+	}
+	if live["chat"] != "resume-24-99" {
+		t.Errorf("the live conversation arrived as chat %v, want resume-24-99", live["chat"])
+	}
+	if live["session"] != 0 {
+		t.Errorf("the live conversation arrived as session %v, want 0", live["session"])
+	}
+}
+
+// TestAnEmptyTranscriptStillCarriesTheField.
+//
+// The runtime's wire omits an empty array — so a terminal attaching to an idle
+// engine gets a transcript with no messages field at all. This process is where
+// that becomes an empty array again, and it has to: a panel replacing what it
+// shows cannot tell a missing field from a frame that is not about the thread,
+// and would read it as the sessions list and wipe the drawer.
+func TestAnEmptyTranscriptStillCarriesTheField(t *testing.T) {
+	got := agentHistoryPayload(0, "c-1", nil, []AgentHistoryTurn{})
+	raw, ok := got["messages"]
+	if !ok {
+		t.Fatal("an empty transcript dropped its messages field")
+	}
+	if msgs, ok := raw.([]AgentHistoryTurn); !ok || msgs == nil {
+		t.Errorf("messages came through as %#v, want an empty array", raw)
+	}
+	// And it survives the encoder as [] rather than null.
+	var back map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(jsonLine(got)), &back); err != nil {
+		t.Fatal(err)
+	}
+	if string(back["messages"]) != "[]" {
+		t.Errorf("on the wire messages is %s, want []", back["messages"])
+	}
+}
+
+// TestOnePersonInTwoWindowsIsOneHand.
+//
+// # What was on screen
+//
+// A room with one human in two browsers holds TWO members: same display name,
+// different session ids, different colours from the rotation. The rule that
+// hides the driver's marker — their hand is already on the X pointer, so a
+// second arrow is a duplicate — matched only the session that held control.
+// The other window went on drawing an arrow with the same name in another
+// colour, shadowing the real pointer.
+//
+// The comparison is by NAME because that is the only identity a member has.
+// The cost is stated where the function lives: two different people who share a
+// display name are treated as one. That is the rarer case, and it was chosen.
+func TestOnePersonInTwoWindowsIsOneHand(t *testing.T) {
+	for _, tc := range []struct {
+		driver, who string
+		want        bool
+		why         string
+	}{
+		{"Federico Pereira", "Federico Pereira", true, "the same person's other window"},
+		{"Federico Pereira", " federico pereira ", true, "spacing and case are not identity"},
+		{"Federico Pereira", "Ana Maria", false, "somebody else entirely"},
+		{"", "Federico Pereira", false, "an unnamed driver must not suppress everyone"},
+		{"Federico Pereira", "", false, "an unnamed viewer is not the driver"},
+		{"", "", false, "two nothings are not the same person"},
+		{"   ", "   ", false, "and neither are two blanks"},
+	} {
+		if got := sameHand(tc.driver, tc.who); got != tc.want {
+			t.Errorf("sameHand(%q, %q) = %v, want %v — %s",
+				tc.driver, tc.who, got, tc.want, tc.why)
+		}
+	}
+}

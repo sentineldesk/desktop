@@ -19,6 +19,40 @@
 # This is the deploy path. To build the image from source instead — for people
 # changing the code — use deploy/docker-compose.dev.yml, which has a `build:`
 # stanza rather than the `image:` line below.
+#
+# `make image` in either repository tags exactly the names below, so a local
+# build is picked up here with nothing to override. That is deliberate: the two
+# used to differ, and what `make image` built was never what `docker compose up`
+# ran — it pulled a published image while a freshly compiled one sat unused, and
+# the only sign was a version in the footer that did not match the source.
+#
+# ---------------------------------------------------------------------------
+# Two services, and the agent is still OPTIONAL — naming the desktop is how you
+# say so:
+#
+#   docker compose up -d                the desktop and an agent beside it
+#   docker compose up -d sentineldesk   the desktop, on its own
+#
+# The desktop has no depends_on and no link to the agent, so the second line is
+# a complete deployment and not a crippled one. That is the property worth
+# checking whenever this file changes: the desktop must come up, and work, with
+# the agent never started at all.
+#
+# A third arrangement needs nothing here: run `sentineldesk-agent -serve` on the
+# HOST and it finds the socket in the sentineldesk-run volume by itself. That is
+# the lightest way to work while changing the agent — but do not run both, or
+# two runtimes end up on one desktop and the newer connection wins while the
+# older is dropped. Nothing breaks; it is just confusing. Pick one.
+
+# The project name, pinned here rather than derived from the directory.
+#
+# Compose otherwise names the project after the folder holding this file, so the
+# same stack was `sentineldesk` under `make up` and `desktop` under a plain
+# `docker compose up` — two projects, both declaring container_name:
+# sentineldesk, and the second failing with "name already in use" with nothing
+# in the message pointing at the cause. One name, and the two commands are the
+# same deployment.
+name: sentineldesk
 
 services:
   sentineldesk:
@@ -48,12 +82,22 @@ services:
       # Claude Code, or sentineldesk-agent — can drive the desktop directly,
       # without `docker exec`.
       - MCP_SOCK=/run/sentineldesk/mcp.sock
+      # The clock and the keyboard the desktop comes up with. Both are things
+      # somebody notices in the first minute and cannot fix from the browser.
+      - TZ=${TZ:-UTC}
+      - KEYBOARD_LAYOUT=${KEYBOARD_LAYOUT:-us}
+      - KEYBOARD_VARIANT=${KEYBOARD_VARIANT:-}
     volumes:
       # Browser profiles, files, the audit log, the TLS certificate — kept
       # across restarts and upgrades.
       - sentineldesk-home:/home/sentineldesk
       # The MCP socket, exposed for a host-side agent (see MCP_SOCK above).
       - sentineldesk-run:/run/sentineldesk
+      # The audit trail, kept apart from the home so that wiping a browser
+      # profile never takes the record of what was done with it.
+      - sentineldesk-audit:/var/log/sentineldesk
+      # Scratch space for screenshots and recordings in flight.
+      - sentineldesk-work:/tmp/sentineldesk
     shm_size: "2gb"
     # The built-in OpenVPN client needs these. Uncomment only if you will use it.
     # cap_add:
@@ -61,6 +105,93 @@ services:
     # devices:
     #   - /dev/net/tun
 
+  # The agent: the brain that talks to the model providers and drives the
+  # desktop. Leave it out with `docker compose up -d sentineldesk`.
+  agent:
+    image: cnsoluciones/sentineldesk-agent:${SENTINELDESK_AGENT_TAG:-latest}
+    container_name: sentineldesk-agent
+    restart: unless-stopped
+    # No ports and no network of its own: sentineldesk-run is the ONLY link
+    # between the two, and it is a directory of Unix sockets. Nothing about this
+    # conversation leaves the host.
+    #
+    # depends_on is deliberately absent. The runtime waits for the desktop and
+    # reconnects when it comes back, so ordering it here would buy nothing and
+    # would suggest a dependency that does not exist — the desktop runs
+    # perfectly well with this service never started at all.
+    environment:
+      - MCP_SOCK=/run/sentineldesk/mcp.sock
+    volumes:
+      # The desktop's socket directory. Both sockets live here: MCP, which the
+      # agent drives the desktop through, and the chat wire the panel uses.
+      - sentineldesk-run:/run/sentineldesk
+      # The agent's whole home, and the whole of it on purpose.
+      #
+      # It holds .sentineldesk (the model, the keys, the history the chat panel
+      # reads) AND anything installed beside it: this agent can drive a model
+      # through a vendor's own CLI — claude, codex, opencode — and those install
+      # into ~/.local/bin with their credentials in their own dotfiles. A volume
+      # covering only .sentineldesk would keep the preference naming a tool and
+      # lose the tool, every time the container was replaced.
+      - sentineldesk-agent:/home/agent
+
+  # A TURN relay, for the networks where peer-to-peer will not form: symmetric
+  # NAT, or a firewall that drops UDP. Started only when asked for —
+  #
+  #   docker compose --profile turn up -d
+  #
+  # The desktop's embedded STUN responder handles the ordinary case on its own,
+  # which is why this is not a default: a relay carries every frame of every
+  # session through this container, and paying that when nobody needs it is the
+  # wrong trade. Set CLIENT_TURN_URLS on the desktop when this is running, or
+  # browsers will never be told it exists.
+  coturn:
+    image: coturn/coturn:latest
+    container_name: sentineldesk-turn
+    profiles: ["turn"]
+    restart: unless-stopped
+    command: >-
+      -n --log-file=stdout --fingerprint --lt-cred-mech
+      --user=${TURN_USER:-webrtc}:${TURN_PASS:-webrtc123}
+      --realm=sentineldesk --listening-port=3478
+      --min-port=49160 --max-port=49200 --no-cli
+    ports:
+      # 3478/udp belongs to the desktop's own STUN responder above; this takes
+      # the TCP side and its own relay range.
+      - "3478:3478/tcp"
+      - "49160-49200:49160-49200/udp"
+
+# The names are PINNED, and that is load-bearing rather than tidiness.
+#
+# Compose prefixes a volume with its project name by default, so these would be
+# `desktop_sentineldesk-run` and friends depending on the directory this file
+# happens to sit in. Two things break on that. An agent running on the host
+# looks for a volume called `sentineldesk-run` to find the socket, and would not
+# find it. And anybody who started the desktop with `docker run` once — every
+# example in the README — would come back with compose to a different, empty
+# home: no browser profiles, no TLS certificate, no audit log.
+#
+# Pinned, the two ways of starting it are the same deployment.
+#
+# The cost is a warning, on a machine where these volumes were created by
+# `docker run` before compose ever saw them:
+#
+#   WARN volume "sentineldesk-run" already exists but was not created by
+#        Docker Compose. Use `external: true` to use an existing volume
+#
+# It is cosmetic and it is the right trade. Compose is telling you it is
+# adopting a volume it did not create, which is exactly what it should do here.
+# `external: true` would silence it and make a fresh install fail with "volume
+# not found", because there would be nothing to adopt — a first run is the case
+# that matters more than a tidy log on a machine that has already run once.
 volumes:
   sentineldesk-home:
+    name: sentineldesk-home
   sentineldesk-run:
+    name: sentineldesk-run
+  sentineldesk-agent:
+    name: sentineldesk-agent
+  sentineldesk-audit:
+    name: sentineldesk-audit
+  sentineldesk-work:
+    name: sentineldesk-work

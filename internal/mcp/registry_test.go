@@ -204,6 +204,9 @@ var gatedBeforeTheRefactor = []string{
 	// list because the tools no longer exist, which is the one edit this
 	// list's warning does not forbid: retirement is not reclassification.
 	"ui_click", "ui_set_text", "ui_focus", "fill_form", "terminal_run",
+	// Types a credential into a field: keystrokes on the shared screen, so it
+	// passes the same gate every other injection does.
+	"type_secret",
 	"start_restream", "stop_restream",
 }
 

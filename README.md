@@ -4,9 +4,9 @@ A complete Linux desktop that runs **inside a Docker container with no physical
 monitor**, streams to the browser over **WebRTC**, and is driven at the same
 time by people and by an AI agent that sees and acts on the *same* X display.
 
-**This is a standalone, self-contained product.** One `docker run` gives a full
-desktop that people and an agent share — no control plane, no database, nothing
-else to stand up. It is for anyone who wants a collaboration environment for
+**This is a standalone, self-contained product.** One `docker compose up` gives
+a full desktop that people and an agent share — no control plane, no database,
+nothing else to stand up. It is for anyone who wants a collaboration environment for
 humans and machines and nothing more.
 
 > Running a *fleet* of these desktops behind a single front desk — a room
@@ -83,42 +83,258 @@ curl -fsSL https://raw.githubusercontent.com/sentineldesk/desktop/main/install.s
 # --ip <addr> on a public VPS. Run with --help to see all options.
 ```
 
-### docker run
+### Two services, one command
 
-```bash
-docker run -d --name sentineldesk \
-  -p 8080:8080 \
-  -p 3478:3478/udp \
-  -p 59000-59049:59000-59049/udp \
-  -e AUTH_USER=admin -e AUTH_PASS=change-me \
-  -v sentineldesk-home:/home/sentineldesk \
-  -v sentineldesk-run:/run/sentineldesk \
-  -e MCP_SOCK=/run/sentineldesk/mcp.sock \
-  --shm-size=2g \
-  cnsoluciones/sentineldesk:latest
-# → open http://localhost:8080 and log in
-```
-
-The `sentineldesk-run` volume and `MCP_SOCK` expose the agent's MCP socket
-outside the container, so an agent on the host — Claude Code, or
-`sentineldesk-agent` — can drive the desktop directly, without `docker exec`.
-Leave them out and the socket stays private to the container.
-
-The UDP ports are the WebRTC media range and the embedded STUN responder;
-publish them so the stream reaches you from another machine. The volume keeps
-the home (browser profiles, files, the audit log) across restarts. Leave
-`AUTH_USER` / `AUTH_PASS` empty for no login (local use only). The WebSocket is
-the only authentication gate; no HTTP endpoint returns secrets.
-
-### docker compose
-
-Prefer compose? Grab the one that uses the published image (no build) and bring
-it up:
+The desktop and the agent are **two containers**, and compose is how they are
+run. Download the file and bring it up — no clone, no build:
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/sentineldesk/desktop/main/docker-compose.yml
 AUTH_PASS=change-me HOST_IP=<your-ip> docker compose up -d
+# → open https://<your-ip>:8080 and log in
 ```
+
+`HOST_IP` is the address browsers reach this host at — its LAN address, or the
+public IP on a VPS. Off localhost it is required rather than optional: WebRTC
+would otherwise advertise the container's bridge address, which nothing outside
+can reach, and the video connects and stays black.
+
+That is the whole install. What it starts:
+
+| service | container | what it is |
+|---|---|---|
+| `sentineldesk` | `sentineldesk` | the desktop: X, the browser, the apps, the WebRTC stream, the MCP server |
+| `agent` | `sentineldesk-agent` | the runtime that drives it — the brain behind the chat panel |
+
+**The agent is optional, and naming the desktop is how you say so:**
+
+```bash
+docker compose up -d                # the desktop and an agent beside it
+docker compose up -d sentineldesk   # the desktop, on its own
+```
+
+The desktop has no `depends_on` and no link to the agent, so the second line is
+a complete deployment rather than a crippled one. Order does not matter either:
+started first, the agent waits for the desktop and reconnects when it comes
+back.
+
+### How the two are joined
+
+One volume, and it is worth understanding because it is the whole security
+story:
+
+```
+sentineldesk-run   ──  a directory of Unix sockets, mounted in both
+```
+
+That is the **only** link between them. The agent has no ports, no network of
+its own, and no route to the desktop except that socket — so nothing about the
+conversation, or what the agent does, leaves the host. It also means the agent
+can only do what the socket grants, which is why there is one security boundary
+here rather than two.
+
+The other volumes keep state across restarts and upgrades:
+
+| volume | holds |
+|---|---|
+| `sentineldesk-home` | browser profiles, files, the TLS certificate |
+| `sentineldesk-audit` | the action log — kept apart, so wiping a profile never takes the record with it |
+| `sentineldesk-agent` | the agent's model choice, keys and history |
+| `sentineldesk-work` | scratch space for screenshots and recordings in flight |
+
+`sentineldesk-agent` is not optional if you want the agent to remember its
+model: without it the container is replaced and the preference goes with it.
+
+### Everyday commands
+
+```bash
+docker compose ps                      # what is up
+docker compose logs -f sentineldesk    # follow the desktop
+docker compose logs -f agent           # follow the agent
+docker compose restart agent           # restart one service
+docker compose down                    # stop both, keep the volumes
+docker compose pull && docker compose up -d    # upgrade in place
+```
+
+`docker compose down` leaves the volumes alone, so the home, the audit log and
+the agent's keys survive it. To start genuinely fresh, remove them by name —
+and read that as the destructive command it is:
+`docker volume rm sentineldesk-home sentineldesk-agent`.
+
+### Configuring it
+
+Compose reads a `.env` beside the file, which is the tidier place for anything
+you would otherwise repeat on the command line:
+
+```bash
+cat > .env <<'EOF'
+AUTH_USER=admin
+AUTH_PASS=a-real-password
+HOST_IP=192.168.0.100
+SENTINELDESK_TAG=latest        # or `full` for the heavier apps
+TZ=America/Argentina/Buenos_Aires
+KEYBOARD_LAYOUT=latam
+HTTP_PORT=8080
+EOF
+docker compose up -d
+```
+
+Every one of those has a default; only `AUTH_PASS` and `HOST_IP` really want
+setting before anybody else can reach the deployment.
+
+**A relay for hostile networks.** Peer-to-peer fails on symmetric NAT and where
+UDP is dropped. A TURN service is in the file and off by default, because a
+relay carries every frame through it and paying that when nobody needs it is the
+wrong trade:
+
+```bash
+docker compose --profile turn up -d
+```
+
+Set `CLIENT_TURN_URLS` on the desktop when it is running, or browsers are never
+told the relay exists.
+
+**Built-in VPN.** The desktop can dial OpenVPN, which needs a tunnel device and
+the capability to configure routes. Both are commented out in the compose file —
+uncomment `cap_add: NET_ADMIN` and `devices: /dev/net/tun` on the `sentineldesk`
+service. `NET_ADMIN` lets the container manage its own network stack, so leave
+it off on a deployment that will never dial one.
+
+### Picking a model
+
+The agent comes up with no key, which is deliberate: the socket is what it needs
+to start, and the key is what `/connect` is for. Open a session in its container
+and type it there:
+
+```bash
+docker exec -it sentineldesk-agent sentineldesk-agent
+# then: /connect
+```
+
+The chat panel in the browser goes from amber to green on its own — nothing to
+reload. See [the TUI](docs/guide/#tui) for everything you can type in that
+session.
+
+Set `AGENT_ENABLED=0` on the desktop to turn the whole agent plane off, panel
+included.
+
+### Running the agent on the host instead
+
+A third arrangement needs nothing in the compose file. The agent finds the
+socket in the `sentineldesk-run` volume by itself:
+
+```bash
+docker compose up -d sentineldesk   # the desktop only
+sentineldesk-agent -serve           # the agent, on the host
+```
+
+This is the lightest way to work while you are *changing* the agent — no image
+to rebuild between edits. Do not run both: two runtimes on one desktop means the
+newer connection wins and the older is dropped. Nothing breaks; it is just
+confusing. Pick one.
+
+### The TUI: driving the agent from a terminal
+
+The chat panel in the browser is one face on the agent. The other is a terminal
+session, and it is the one with everything in it — the model picker, the cost
+panel, the approval prompts. Open it in the agent's container:
+
+```bash
+docker exec -it sentineldesk-agent sentineldesk-agent
+```
+
+With no arguments it finds the socket, opens a session, and waits. Each task you
+type keeps the previous one's context, so it is a conversation rather than a
+series of unrelated questions.
+
+**What you can type.** Anything that is not a slash command is sent to the
+agent — as a new task, or as steering if one is already running.
+
+| | |
+|---|---|
+| `/help` | what you can type here |
+| `/model` | pick the model that answers next — switches mid-session, no restart |
+| `/connect` | add a provider's API key, checked before it is saved |
+| `/panel` (`ctrl+b`) | the session's context, tokens and cost so far |
+| `/compact` | fold the older conversation into a summary |
+| `/rewind` (`/undo`) | drop back before an earlier task — **the desktop is not rewound** |
+| `/memory` | have something remembered, permanently |
+| `/stop` (`ctrl-c`) | end the run after this turn |
+| `/language` | the language of the interface |
+| `/exit` (`ctrl-d`) | leave the session |
+
+Typing `/` opens a palette that completes as you go, so none of these has to be
+memorised. Commands your deployment shipped in `commands/*.md` appear there too.
+
+**Approving what it does.** Start with `-mode ask` and every call that *changes*
+something stops for you first — reads go through untouched, because a
+confirmation for every screenshot trains somebody to press `y` without reading:
+
+```bash
+docker exec -it sentineldesk-agent sentineldesk-agent -mode ask
+```
+
+At the prompt:
+
+| key | |
+|---|---|
+| `y` | allow this call |
+| `n` | refuse it — the agent is told not to look for another way round |
+| `a` | allow calls **like** this one for the rest of the run |
+| `t` | allow this **tool** for the rest of the run, whatever the arguments |
+
+`a` uses the command's human-understandable name, so approving
+`apt install nginx` also covers `apt install curl` and does **not** cover `rm`.
+A chained or redirecting command is never generalised: approving `apt update`
+cannot become approval for `apt update && rm -rf /`. Every grant, and every
+later call that used one, is written to the trail — “why wasn't I asked?” is
+answerable afterwards.
+
+**Bounding a run.** All four are off by default and compose freely:
+
+```bash
+sentineldesk-agent -run "install nginx and show me it working" \
+  -max-turns 40 -max-spend 0.50 -max-time 10m -mode ask
+```
+
+`-max-turns` is a checkpoint rather than a wall: reaching it asks the model
+whether more steps would finish the job, and there is a hard ceiling behind that
+it cannot argue past. `-max-spend` and `-max-time` are ceilings — they end the
+run with what it has.
+
+**Reading back what happened.** The trail is the point of the whole design:
+
+```bash
+sentineldesk-agent -history          # every past run, with turns, calls and cost
+sentineldesk-agent -history 42       # one run in full: the plan, every call, why it stopped
+sentineldesk-agent -export 42        # the whole session on stdout
+sentineldesk-agent -costs            # what has been spent, and on what
+sentineldesk-agent -resume 42        # pick it back up; 0 is the most recent
+```
+
+`-history <id>` shows the model's own plan beside what it actually did, names
+which agent acted when a sub-task was delegated, and says plainly why a run
+stopped — `blocked · over-budget`, rather than leaving you to infer it from a
+turn count.
+
+**Before spending anything:**
+
+```bash
+sentineldesk-agent -doctor           # 15 checks against the real desktop, no model
+sentineldesk-agent -tools "audit the firewall"    # what it would be offered, and its ranking
+sentineldesk-agent -skills           # the skills found, and where each came from
+```
+
+`-doctor` is the first thing to run when something is wrong. If it fails, the
+problem is not the key.
+
+### The agent is a separate repository
+
+It is deliberately **not** in the desktop image. It has
+[its own repository](https://github.com/sentineldesk/agent) and its own release
+cycle, and putting it here would mean a desktop and an agent that can only ever
+be the same version — which is the property the split exists to avoid. It runs
+beside the desktop, never inside it.
 
 ### lite or full
 
@@ -134,34 +350,31 @@ Swap the tag to switch: `cnsoluciones/sentineldesk:full`.
 
 ### On a server or your LAN
 
-To reach the desktop from another machine, tell it the address ICE should
-advertise and serve HTTPS (WebRTC needs a secure context off localhost). This is
-a real, working invocation on a Linux host at `172.17.0.17`:
+Reaching the desktop from another machine needs one thing: the address ICE
+should advertise. Set `HOST_IP` and compose does the rest — it wires
+`NAT1TO1_IP`, `TLS_HOSTS` and the UDP range together for you:
 
 ```bash
-docker run -d --name sentineldesk \
-  -p 8080:8080 \
-  -p 3478:3478/udp \
-  -p 59000-59049:59000-59049/udp \
-  -e AUTH_USER=admin -e AUTH_PASS=change-me \
-  -e WEBRTC_MIN_PORT=59000 -e WEBRTC_MAX_PORT=59049 \
-  -e NAT1TO1_IP=172.17.0.17 \
-  -e TLS_SELFSIGNED=1 -e TLS_HOSTS=172.17.0.17 \
-  -v sentineldesk-home:/home/sentineldesk \
-  -e MCP_SOCK=/run/sentineldesk/mcp.sock \
-  --shm-size=2g \
-  cnsoluciones/sentineldesk:latest
+HOST_IP=172.17.0.17 AUTH_PASS=change-me docker compose up -d
 # → open https://172.17.0.17:8080 (self-signed cert; accept the warning once)
 ```
 
-- `NAT1TO1_IP` — the host's reachable IP, so ICE advertises an address a remote
-  browser can actually connect to (set it to your public IP behind a router).
-- `TLS_SELFSIGNED=1` + `TLS_HOSTS` — serve HTTPS with a self-signed certificate
-  for those hosts. The certificate persists in the home volume.
-- `WEBRTC_MIN_PORT` / `WEBRTC_MAX_PORT` — must match the published UDP range.
+What that one variable sets, and why each matters:
 
-**Built-in VPN (optional):** the desktop can dial an OpenVPN connection. To
-allow it, add `--cap-add NET_ADMIN --device /dev/net/tun`.
+- **`NAT1TO1_IP`** — the host's reachable IP, so ICE advertises an address a
+  remote browser can actually connect to. Without it the page stalls at
+  “Establishing WebRTC”, because the container advertised its bridge address.
+  Behind a router on a public VPS, this is the public IP.
+- **`TLS_HOSTS`** with `TLS_SELFSIGNED=1` — HTTPS with a self-signed
+  certificate for that host, kept in the home volume so it is generated once.
+  This is more than the lock icon: browsers only allow the microphone and the
+  rich clipboard on a secure origin, so a desktop reached over plain HTTP is
+  quietly missing features.
+- **`WEBRTC_MIN_PORT` / `WEBRTC_MAX_PORT`** — pinned to the published UDP
+  range, which is what makes the media connect without host networking.
+
+Terminating TLS yourself with nginx, Caddy or Nginx Proxy Manager in front?
+Set `TLS_SELFSIGNED=0` so the backend speaks plain HTTP to the proxy.
 
 ### From source
 
@@ -174,11 +387,16 @@ make shell     # a root shell inside the running container
 make down      # stop it
 ```
 
-`make up` is the development harness (`deploy/docker-compose.dev.yml`) — one
-container, HTTP on localhost, no authentication by default (self-signed cert;
-accept the warning once). It is also the way to really verify a change: a green
-`make test` says the tool catalogue is consistent and delivery does not panic,
-and nothing more. Real verification means `make up` and exercising it.
+`make up` builds the image and starts `docker-compose.yml` — the same file
+somebody downloads and runs by hand, so what you develop against is what other
+people deploy. There is no separate development compose file: there was one, and
+the two had already drifted apart in a way nobody would have looked for (it
+never set `MCP_SOCK`, so a desktop started from it kept its socket inside the
+container where no agent could reach it).
+
+It is also the way to really verify a change: a green `make test` says the tool
+catalogue is consistent and delivery does not panic, and nothing more. Real
+verification means `make up` and exercising it.
 
 ## Requirements
 
@@ -228,6 +446,26 @@ Left at the default it stays private to the container, reached through
 `sentineldesk -mcp-stdio` under `docker exec`, a thin stdin/stdout ↔ socket
 JSON-RPC pipe: either way, killing the agent never takes the desktop down. The
 desktop outlives whatever went wrong beside it.
+
+**A wire between the two planes — the agent chat panel.** The daemon opens a
+second Unix socket (also mode `0600`), `AGENT_SOCK`, which defaults to sitting
+**beside** `MCP_SOCK` in the same directory — so relocating one relocates both
+and they cannot end up in different volumes. `sentineldesk-agent -serve`
+connects to it and the browser gets a chat panel next to the desktop: what a
+person types goes down the DataChannel it already had, the daemon forwards it,
+and the agent's answer and every tool it calls come back the same way. The
+browser never learns that any of this exists.
+
+It is deliberately **not** an MCP tool. The MCP vocabulary is visible to every
+client on that socket, so a remote Claude Code could have read what people type
+into the panel.
+
+The runtime **connects; the daemon listens** ([ADR-004](docs/adr/0004-runtime-lifecycle.md)),
+which is what makes "no agent" the cheap case: an accept queue nobody joins
+rather than a retry loop that has to be right on every boot. `AGENT_ENABLED=0`,
+a runtime that is not installed, or one with no model configured are three
+different states and the panel reports each with the command that fixes it.
+None of them stops the desktop from booting.
 
 **Control is claimed by either plane.** Every tool that puts input into X passes
 through the same arbitration a person does — the agent never takes the controls

@@ -384,6 +384,32 @@ func (s *Server) startJob(ctx context.Context, command string, asRoot bool) (job
 		Window: win, Dir: jobDir(id)}, nil
 }
 
+// recordingNote is the sentence a tool result carries when its window is about
+// to appear in a recording, or "" when nothing is being recorded.
+//
+// # Why it warns instead of hiding the window
+//
+// Because the window being visible is the property, not an accident. A job runs
+// where the room can see it precisely so that "what is this agent running" has
+// an answer somebody can read off the screen, and a version of this that
+// minimised itself during a recording would be an agent hiding its work at
+// exactly the moment somebody is keeping a record of it.
+//
+// So the terminal stays where it is and the surprise goes. What was actually
+// wrong was nobody being TOLD: a recording of a video came back with a terminal
+// sitting on top of it, and the first anyone knew was watching the file.
+//
+// The caller decides what to do — minimise it, move it, or judge that it does
+// not matter. That decision is not this function's to make.
+func (s *Server) recordingNote() string {
+	if st := s.recorder.Status(); st["recording"] == true {
+		return "\n\nNOTE: a recording is running, and this terminal window is on the " +
+			"shared screen — it will be in the take. Minimise it (minimize_window) or " +
+			"finish with it before recording anything you want clean."
+	}
+	return ""
+}
+
 // ensureVisibleSession guarantees there is a tmux session AND that a terminal
 // window is genuinely showing it.
 //

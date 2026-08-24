@@ -146,6 +146,7 @@ job_wait: esperar a que termine, esperá que termine, cuando termine, una vez qu
 job_abort: frenar, frená, abortar, abortá, parar, pará, cancelar, cancelá, matar la tarea, no era eso
 sleep: esperar, esperá, espera, pausa, pausar, poner en pausa, dormir, hacer nada por, por tres minutos, por 30 segundos, dale un minuto, mientras graba, durante la grabación, durante la grabacion, demora, aguantá, cuenta regresiva
 secret_list: contraseña, contrasena, contraseñas, clave, claves, credencial, credenciales, secreto, secretos, baulera, bóveda, boveda, token, api key, usuario y clave, qué contraseña, que contrasena
+type_secret: escribí la contraseña, escribi la contrasena, poné la clave, pone la clave, ingresá la contraseña, tipear la contraseña, campo de contraseña, formulario de login, iniciar sesión sin mostrar, meté la clave
 activity: qué pasó, que paso, qué cambió, que cambio, quién hizo, quien hizo, historial, línea de tiempo, linea de tiempo, mientras no estaba, desde que me frenaste, qué hiciste, que hiciste, qué hicieron, que hicieron, registro, auditoría, auditoria
 job_list: tareas, qué tareas, que tareas, trabajos, qué hay corriendo, que hay corriendo, en segundo plano
 

@@ -41,12 +41,23 @@ import (
 // corrupt.
 type Recorder struct {
 	display     string
+
+	// Overlays is what steps out of the frame for a clean take, when anything
+	// is wired to it. An interface rather than the concrete type because the
+	// pointers belong to the room and the recorder belongs to the tool server —
+	// two things that do not otherwise know about each other, and should not
+	// start to over this.
+	Overlays interface {
+		Hide()
+		Show()
+	}
 	audioDevice string
 	Dir         string
 
 	mu        sync.Mutex
 	cmd       *exec.Cmd
 	done      chan struct{} // closed once cmd.Wait has returned
+	cleaned   bool          // this recording hid the overlays, so this one restores them
 	path      string
 	container string
 	startedAt time.Time
@@ -67,9 +78,56 @@ type RecordOpts struct {
 	Kbps      int
 	Audio     bool
 	Path      string // optional; generated inside dir when empty
+
+	// Clean keeps the take clear of the things that are on the screen for the
+	// benefit of whoever is watching live rather than for the recording: the
+	// mouse cursor, and the name tags that say who is driving.
+	//
+	// The two are not the same cost. The cursor is drawn by THIS pipeline, so
+	// dropping it changes the file and nothing else. The name tags are real
+	// windows on the display, so hiding them hides them from everybody until
+	// the recording stops — see desktop.PeerPointers.Hide.
+	Clean bool
+
+	// XID records ONE window instead of the whole screen. Zero is the screen.
+	//
+	// This is the answer to "something might pop up in the middle of my
+	// recording", and it is a better answer than hiding things one at a time:
+	// what is not inside that window cannot be in the frame, including windows
+	// nobody predicted.
+	XID uint32
 }
 
 // Start begins recording. It fails if one is already in progress.
+// pipelineFor is the gst-launch description, built apart from running it.
+//
+// Separate so a test can read it. What goes wrong here is invisible from the
+// outside: a recording made with the wrong source still records, still writes a
+// playable file, and is only wrong when somebody watches it — which is minutes
+// later and usually somebody else.
+func pipelineFor(display, audioDevice, mux, path, venc, aenc string, o RecordOpts) string {
+	// show-pointer was hard-coded true, which is right for watching somebody
+	// work and wrong for recording a video: the cursor sat over the picture for
+	// the whole take with nothing to be done about it.
+	source := fmt.Sprintf("ximagesrc display-name=%s show-pointer=%t use-damage=0",
+		display, !o.Clean)
+	if o.XID != 0 {
+		source += fmt.Sprintf(" xid=%d", o.XID)
+	}
+	desc := fmt.Sprintf(
+		"-e %s name=mux ! filesink location=%s "+
+			"%s "+
+			"! video/x-raw,framerate=%d/1 ! videoconvert "+
+			"! video/x-raw,format=I420 ! queue ! %s ! mux.",
+		mux, path, source, o.FPS, venc)
+	if o.Audio {
+		desc += fmt.Sprintf(
+			" pulsesrc device=%s ! audioconvert ! audioresample ! queue ! %s ! mux.",
+			audioDevice, aenc)
+	}
+	return desc
+}
+
 func (r *Recorder) Start(o RecordOpts) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -107,6 +165,17 @@ func (r *Recorder) Start(o RecordOpts) (string, error) {
 	r.path = path
 	r.container = o.Container
 	r.startedAt = time.Now()
+
+	// Hidden AFTER the process is up, so a pipeline that fails to start does
+	// not leave the room without its pointers. Remembered rather than inferred
+	// from the options later, because Stop must put back exactly what Start
+	// took away — and a recording started clean while something else had
+	// already hidden them is not this one's to restore.
+	r.cleaned = false
+	if o.Clean && r.Overlays != nil {
+		r.Overlays.Hide()
+		r.cleaned = true
+	}
 
 	// Reap it when it exits, and publish that fact through a channel rather than
 	// letting Stop read cmd.ProcessState. Wait writes ProcessState from this
@@ -172,17 +241,7 @@ func (r *Recorder) buildArgs(o RecordOpts, path string) ([]string, error) {
 	// Measured against a scrolling terminal it also cost 130% of a core where
 	// I420 costs 98%. Better compatibility and a third less CPU, from naming the
 	// format the file was always supposed to be in.
-	desc := fmt.Sprintf(
-		"-e %s name=mux ! filesink location=%s "+
-			"ximagesrc display-name=%s show-pointer=true use-damage=0 "+
-			"! video/x-raw,framerate=%d/1 ! videoconvert "+
-			"! video/x-raw,format=I420 ! queue ! %s ! mux.",
-		mux, path, r.display, o.FPS, venc)
-	if o.Audio {
-		desc += fmt.Sprintf(
-			" pulsesrc device=%s ! audioconvert ! audioresample ! queue ! %s ! mux.",
-			r.audioDevice, aenc)
-	}
+	desc := pipelineFor(r.display, r.audioDevice, mux, path, venc, aenc, o)
 	return SplitArgs(desc), nil
 }
 
@@ -214,7 +273,18 @@ func (r *Recorder) Stop() (string, int64, error) {
 	r.cmd = nil
 	r.done = nil
 	r.path = ""
+	restore := r.cleaned
+	r.cleaned = false
 	r.mu.Unlock()
+
+	// The screen goes back to telling people who is driving. Done here rather
+	// than left to whoever asked, because a recording can end in ways nobody
+	// asked for — a stop from the toolbar, a run cut off — and pointers that
+	// stayed hidden after one of those would be a permanent change made by a
+	// temporary request.
+	if restore && r.Overlays != nil {
+		r.Overlays.Show()
+	}
 
 	var size int64
 	if fi, err := os.Stat(path); err == nil {

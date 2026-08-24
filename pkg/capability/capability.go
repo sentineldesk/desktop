@@ -199,6 +199,23 @@ type Def struct {
 	// Unlike Risk this has a meaningful default: most verbs do not need the
 	// desktop, and false is the conservative answer because it grants nothing.
 	RequiresControl bool `json:"-"`
+
+	// TimeoutMS is how long this verb may take before a client is entitled to
+	// stop waiting for it. Zero means unbounded, which is the honest default:
+	// most verbs answer immediately and a deadline on one that legitimately
+	// takes minutes would be a limit that fires on success.
+	//
+	// It lives HERE, beside Risk and Visibility, for the reason those do: only
+	// the verb's author knows how long it should take. A runtime keeping its
+	// own table would be a second copy of a classification, and the copy that
+	// drifts is always the one further from the tool.
+	//
+	// Cooperative, not a kill. A client that reaches this deadline stops
+	// WAITING; the work may still be running here. That distinction is the
+	// whole reason to publish a number rather than a promise — a client told
+	// "cancelled" when nothing was cancelled would report a lie at the moment
+	// it matters most.
+	TimeoutMS int `json:"-"`
 }
 
 // EffectiveVisibility is what to publish: the declared value, or VisHidden for
@@ -218,7 +235,7 @@ func (t Def) EffectiveVisibility() Visibility {
 // permission prompt without knowing anything about MCP_POLICY. It costs
 // nothing to publish and it is the standard place for exactly this.
 func (t Def) Annotations() map[string]any {
-	return map[string]any{
+	a := map[string]any{
 		"readOnlyHint":    t.Risk == RiskRead,
 		"destructiveHint": t.Risk == RiskDanger,
 
@@ -240,6 +257,13 @@ func (t Def) Annotations() map[string]any {
 		// and is not.
 		"sentineldesk/visibility": t.EffectiveVisibility().String(),
 	}
+
+	// Published only when declared, so a client can tell "no deadline" from
+	// "a deadline of zero" without a sentinel. Absent means unbounded.
+	if t.TimeoutMS > 0 {
+		a["sentineldesk/timeoutMs"] = t.TimeoutMS
+	}
+	return a
 }
 
 // MarshalJSON writes the wire form: the three fields the MCP specification

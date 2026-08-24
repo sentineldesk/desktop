@@ -163,13 +163,18 @@ func (s *Server) buildTools() []toolDef {
 			Name:        "start_recording",
 			Visibility:  visHidden,
 			Risk:        riskWrite,
-			Description: "Start recording the screen (and optionally audio) to a video file, in parallel with the live stream. container: mp4 (default, H.264+AAC), webm (VP8+Opus) or mkv. Returns the output path.",
+			Description: "Start recording the screen (and optionally audio) to a video file, in parallel with the live stream. container: mp4 (default, H.264+AAC), webm (VP8+Opus) or mkv. Returns the output path.\n\n" +
+				"Two options exist for recording something that is meant to be WATCHED afterwards, rather than a record of work being done. " +
+				"clean: true leaves the mouse cursor and the name tags that say who is driving out of the take — the tags come back the moment the recording stops, and are hidden from live viewers meanwhile, so use it when the video is the point and not when somebody is watching you work. " +
+				"window: <id or title> records only that window, so nothing that opens elsewhere on the screen can appear in the frame; pass an id from list_windows, or enough of a title to pick it out.",
 			InputSchema: schema(map[string]any{
 				"container":   pStr("mp4 | webm | mkv (default mp4)"),
 				"fps":         pIntDef("frames per second (default 30)", 30),
 				"bitrate":     pIntDef("video bitrate in kbps (default 4000)", 4000),
 				"audio":       pBool("also record audio (default true)"),
-				"destination": pStr("container (default) keeps the file on the desktop; download makes the watching browser save it when the recording stops"),
+				"clean":       pBool("keep the mouse cursor and the who-is-driving name tags out of the take (default false)"),
+				"window":      pStr("record only this window — an id from list_windows, or part of its title. Default: the whole screen"),
+				"destination": pStr("download (default) hands the finished file to the browser of whoever is watching; container keeps it on the desktop instead"),
 			}),
 		},
 		{
@@ -192,6 +197,19 @@ func (s *Server) buildTools() []toolDef {
 			Risk:        riskRead,
 			Description: "List the recorded video files (path, size, modified time).",
 			InputSchema: schema(map[string]any{}),
+		},
+		{
+			Name: "deliver_recording",
+			Risk: riskRead,
+			Description: "Hand a recording that is already on the desktop to the browser of " +
+				"whoever is watching, as a download. Use it when a recording ended with " +
+				"nobody watching, or when somebody asks for one again later — " +
+				"list_recordings gives you the paths. Returns how many people it was " +
+				"offered to; zero means nobody is in a browser right now and the file is " +
+				"still where it was.",
+			InputSchema: schema(map[string]any{
+				"path": pStr("the recording's path, from list_recordings"),
+			}, "path"),
 		},
 		{
 			Name:        "get_clipboard",
@@ -287,6 +305,8 @@ func (s *Server) dispatch(ctx context.Context, name string, rawArgs json.RawMess
 		return jsonContent(s.recorder.Status()), false
 	case "list_recordings":
 		return s.toolListRecordings()
+	case "deliver_recording":
+		return s.toolDeliverRecording(argStr(args, "path"))
 	case "get_clipboard":
 		text, _ := s.clip.Get()
 		return textContent("%s", text), false
@@ -397,7 +417,13 @@ func (s *Server) toolScreenshot(args map[string]any) ([]map[string]any, bool) {
 	if dest == "download" {
 		res["delivered_to"] = s.deliver(path, filepath.Base(path))
 		if res["delivered_to"] == 0 {
-			res["note"] = "nobody is watching in a browser: the file stayed on the desktop"
+			// Where it is AND how to get it. This is the branch where somebody
+			// has to come back for the file later, and "it stayed on the
+			// desktop" answers where it is not — the path and the route are
+			// what make it recoverable rather than merely present.
+			res["note"] = "nobody is watching in a browser, so the file stayed on " +
+				"the desktop at " + path + " — it can be fetched later from the " +
+				"file manager, or listed with list_recordings"
 		}
 	}
 	return jsonContent(res), false
@@ -713,6 +739,14 @@ func (s *Server) toolRunCommand(ctx context.Context, command string, timeoutMs i
 			"not the end of it. Call job_wait with this job_id. Do NOT run the command " +
 			"again: it was not cancelled."
 	}
+	// A command runs in a terminal on the shared screen, deliberately, so the
+	// room can see what is being run. That is right until somebody is recording:
+	// the window lands in the take, and the first anyone knows is watching the
+	// file back. Said here rather than fixed by hiding the window, because the
+	// window being visible is the property and not an accident.
+	if note := s.recordingNote(); note != "" {
+		out["recording_warning"] = strings.TrimSpace(note)
+	}
 	// A command run here IS a job, so it carries the same link every other job
 	// tool carries. Especially when it timed out: that is the case where a
 	// person wants to watch the rest of it happen and the agent has nothing else
@@ -839,23 +873,100 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
+// windowFor turns what somebody typed into a window to record.
+//
+// An id or a piece of a title, because both are things a caller has: an id when
+// it came from list_windows, a title when it came from a person. Ambiguity is
+// an error rather than a first match — "chrome" with three browsers open would
+// otherwise record whichever the window manager happened to list first, and the
+// only way to find out which is to watch the file.
+func (s *Server) windowFor(want string) (uint32, error) {
+	if win, err := desktop.ParseWindowID(want); err == nil {
+		return uint32(win), nil
+	}
+	e, err := s.windows()
+	if err != nil {
+		return 0, fmt.Errorf("cannot reach the display to find a window called %q", want)
+	}
+	list, err := e.Windows()
+	if err != nil {
+		return 0, fmt.Errorf("cannot list windows to find %q: %w", want, err)
+	}
+	needle := strings.ToLower(want)
+	var hits []desktop.WindowInfo
+	for _, w := range list {
+		if strings.Contains(strings.ToLower(w.Title), needle) ||
+			strings.Contains(strings.ToLower(w.Class), needle) {
+			hits = append(hits, w)
+		}
+	}
+	switch len(hits) {
+	case 0:
+		return 0, fmt.Errorf("no window matches %q", want)
+	case 1:
+		win, err := desktop.ParseWindowID(hits[0].ID)
+		if err != nil {
+			return 0, err
+		}
+		return uint32(win), nil
+	default:
+		names := make([]string, 0, len(hits))
+		for _, w := range hits {
+			names = append(names, fmt.Sprintf("%s (%s)", w.ID, w.Title))
+		}
+		return 0, fmt.Errorf("%q matches %d windows — name one: %s",
+			want, len(hits), strings.Join(names, ", "))
+	}
+}
+
 func (s *Server) toolStartRecording(args map[string]any) ([]map[string]any, bool) {
 	audio := true
 	if v, ok := args["audio"].(bool); ok {
 		audio = v
 	}
+	clean, _ := args["clean"].(bool)
+
+	// Resolved BEFORE the recording starts, and a name that matches nothing is
+	// refused rather than quietly recording the whole screen. Somebody who
+	// asked for one window and got the desktop finds out when they watch the
+	// file, which is the wrong time.
+	var xid uint32
+	if want := strings.TrimSpace(argStr(args, "window")); want != "" {
+		found, err := s.windowFor(want)
+		if err != nil {
+			return textContent("start_recording failed: %v", err), true
+		}
+		xid = found
+	}
+
 	path, err := s.recorder.Start(media.RecordOpts{
 		Container: argStr(args, "container"),
 		FPS:       argInt(args, "fps"),
 		Kbps:      argInt(args, "bitrate"),
 		Audio:     audio,
+		Clean:     clean,
+		XID:       xid,
 	})
 	if err != nil {
 		return textContent("start_recording failed: %v", err), true
 	}
 	// Remember where this recording should go, because stop_recording is the
 	// call that has a finished file to hand over.
+	//
+	// The default is DOWNLOAD, and it changed: it used to be `container`, which
+	// meant the ordinary case — somebody asks the agent to record something —
+	// finished with a file on a disk they cannot reach. A recording exists to
+	// be watched by the person who asked for it, and the only place they are is
+	// the browser. Leaving it on the desktop was not storage, it was a
+	// disappearance with a path attached.
+	//
+	// `container` is still there for the caller that means it: a recording
+	// another tool on that desktop is going to pick up. It is now something
+	// asked for rather than something arrived at.
 	s.recDestination = strings.ToLower(argStr(args, "destination"))
+	if s.recDestination == "" {
+		s.recDestination = "download"
+	}
 	return textContent("recording to %s", path), false
 }
 
@@ -875,8 +986,69 @@ func (s *Server) toolStopRecording(args map[string]any) ([]map[string]any, bool)
 	if dest == "download" {
 		res["delivered_to"] = s.deliver(path, filepath.Base(path))
 		if res["delivered_to"] == 0 {
-			res["note"] = "nobody is watching in a browser: the file stayed on the desktop"
+			// Where it is AND how to get it. This is the branch where somebody
+			// has to come back for the file later, and "it stayed on the
+			// desktop" answers where it is not — the path and the route are
+			// what make it recoverable rather than merely present.
+			res["note"] = "nobody is watching in a browser, so the file stayed on " +
+				"the desktop at " + path + " — it can be fetched later from the " +
+				"file manager, or listed with list_recordings"
 		}
+	}
+	return jsonContent(res), false
+}
+
+// toolDeliverRecording hands a file that is already on disk to the browser.
+//
+// # Why this exists separately from stop_recording
+//
+// stop_recording can deliver, and does by default — but only at the moment it
+// stops, and only to whoever is watching THEN. A recording that ended with
+// nobody in a browser stayed on the desktop with a note saying where, and there
+// was no way to ask for it afterwards: the note named the file manager, which
+// is a person's route and not an agent's. So "download the recording you made
+// earlier" had no answer.
+//
+// # Why it will not deliver an arbitrary path
+//
+// Because "hand this file to a browser" pointed at a path somebody chose is a
+// file exfiltration tool wearing a helpful name. It is confined to the
+// recordings directory, and the check is on the RESOLVED path so that `..` and
+// a symlink both land outside and are refused.
+func (s *Server) toolDeliverRecording(path string) ([]map[string]any, bool) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return textContent("deliver_recording needs the path of a recording — " +
+			"list_recordings has them"), true
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return textContent("deliver_recording: %v", err), true
+	}
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = real
+	}
+	dir, err := filepath.Abs(s.recorder.Dir)
+	if err != nil {
+		return textContent("deliver_recording: %v", err), true
+	}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
+	if abs != dir && !strings.HasPrefix(abs, dir+string(filepath.Separator)) {
+		return textContent("deliver_recording only hands over recordings, and %s is "+
+			"not in %s", abs, dir), true
+	}
+	fi, err := os.Stat(abs)
+	if err != nil || fi.IsDir() {
+		return textContent("there is no recording at %s", abs), true
+	}
+
+	to := s.deliver(abs, filepath.Base(abs))
+	res := map[string]any{"path": abs, "size_bytes": fi.Size(), "delivered_to": to}
+	if to == 0 {
+		res["note"] = "nobody is watching in a browser, so nothing was handed over — " +
+			"the file is still at " + abs
 	}
 	return jsonContent(res), false
 }

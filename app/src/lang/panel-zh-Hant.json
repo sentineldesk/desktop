@@ -1369,5 +1369,5 @@
   "wr.q.auto": "自動",
   "wr.q.media": "中",
   "wr.q.high": "高",
-  "wr.qualitySet": "串流品質：{{m}}"
+  "wr.qualitySet": "串流品質：{m}"
 }

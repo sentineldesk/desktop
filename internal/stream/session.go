@@ -70,10 +70,10 @@ type wsMsg struct {
 	// knows the right host better than the server does: it builds
 	// stun:<the-hostname-it-already-connected-to>:<port>, which is correct
 	// through every NAT, tunnel and rebinding the server cannot see.
-	StunPort     int         `json:"stunPort,omitempty"`
-	Encoder      string      `json:"encoder,omitempty"`
-	RemoteCursor *bool       `json:"remoteCursor,omitempty"`
-	Version      string      `json:"version,omitempty"`
+	StunPort     int    `json:"stunPort,omitempty"`
+	Encoder      string `json:"encoder,omitempty"`
+	RemoteCursor *bool  `json:"remoteCursor,omitempty"`
+	Version      string `json:"version,omitempty"`
 }
 
 type iceServer struct {
@@ -106,12 +106,43 @@ type inputEvent struct {
 	K      string `json:"k"`
 	Clip   string `json:"clip"`   // clipboard text (browser -> desktop)
 	Action string `json:"action"` // capture: shot | rec_start | rec_stop
-	Format string `json:"format"` // capture: mp4 | webm | mkv
+	// Shared by capture and agent_export, which is fine and deliberate: it
+	// means the same thing in both — what shape the file should take — and a
+	// second field spelled the same way would be one more thing to keep in
+	// step for no gain. capture: mp4 | webm | mkv; agent_export: md | text | json.
+	Format string `json:"format"`
 	ReqID  int    `json:"req"`    // control_answer / question_answer: which one
 	Grant  bool   `json:"grant"`  // control_answer: allowed or refused
 	Answer string `json:"answer"` // question_answer: what the person chose
 	Mode   string `json:"mode"`   // quality: auto | media | high
 	Name   string `json:"name"`   // rename: what this viewer wants to be called
+
+	// The chat panel. Chat names the conversation, Text is what somebody typed,
+	// and Session picks one past transcript out of the history list.
+	//
+	// Chat is allowed to be empty on the first message of a new conversation:
+	// the coordinator mints the id and sends it back, so a browser never has to
+	// invent one the runtime would then have to accept.
+	Chat    string `json:"chat"`
+	Text    string `json:"text"`
+	Session int    `json:"session"`
+
+	// A console session: which terminal, what was typed (base64, as the runtime
+	// wants it), and how big the window is.
+	Term  string `json:"term"`
+	Bytes string `json:"bytes"`
+	Cols  int    `json:"cols"`
+	Rows  int    `json:"rows"`
+
+	// Kind is agent_command's verb: compact, memory, model, connect.start…
+	// Carried rather than interpreted; the runtime is what knows them.
+	Kind string `json:"kind"`
+
+	// All is agent_forget's "every session". A separate field rather than a
+	// value of Session, because the whole-history wipe must not be reachable
+	// by an id that failed to be set: there is no number a browser can send
+	// that empties the ledger, only this word.
+	All bool `json:"all"`
 
 	// viewstats: this client's self-measured reception, for the desktop's
 	// stream card (streamstatus.go). Telemetry, clamped on arrival.
@@ -594,6 +625,13 @@ func (s *Session) start() error {
 		// open showing what the room already chose, not its own default.
 		mode, fps, by := s.room.QualityState()
 		s.sendQuality(mode, fps, by, "")
+		// Whether there is an agent to chat with. Sent on open for the same
+		// reason the capture state is: a panel that opens on its own default
+		// and waits for a change event shows the wrong thing until something
+		// happens, and "nothing has happened yet" is the normal case here.
+		if desk := s.room.AgentDeskOrNil(); desk != nil {
+			s.sendAgentStatus(desk.Availability())
+		}
 		// Clipboard synchronisation, desktop -> browser.
 		go s.watchClipboard(channel)
 		// The real pointer shape (resize arrows, text beam, hand…).
@@ -752,6 +790,62 @@ func (s *Session) handleInput(ev inputEvent) {
 		// requiring one particular person leaves the agent waiting out its
 		// timeout the moment that person steps away from the keyboard.
 		s.room.AnswerQuestion(ev.ReqID, ev.Answer)
+		return
+
+	case "agent_say", "agent_cancel", "agent_history", "agent_export",
+		"agent_console_open", "agent_console_data", "agent_console_resize",
+		"agent_console_close":
+		// The chat panel. Handled above the control check on purpose: talking to
+		// the agent is not driving the desktop, and a viewer who is watching
+		// somebody else work is precisely the person most likely to want to ask
+		// it something. Requiring control to type a message would have made the
+		// chat a privilege of whoever holds the mouse.
+		s.handleAgentPanel(ev)
+		return
+
+	case "agent_command":
+		// The chat panel's slash commands, above the control check with
+		// agent_say for the same reason: asking the agent to compact its own
+		// conversation or remember a fact is not driving the desktop, and a
+		// viewer watching somebody else work is exactly the person most likely
+		// to want one.
+		//
+		// The one command that IS gated is not gated here. A credential cannot
+		// travel this way at all — see the runtime's connect.key, which refuses
+		// anything that did not arrive on its own local socket. That refusal
+		// lives there rather than here on purpose: it is a property of where a
+		// secret may go, not of who is driving, and the process that would
+		// store it is the right one to say no.
+		s.handleAgentPanel(ev)
+		return
+
+	case "agent_forget":
+		// Deleting history is NOT in the line above, and the difference is the
+		// point. Reading the transcript and adding to it are things a room full
+		// of people do together; removing it is destructive, irreversible, and
+		// takes the record away from everyone else watching.
+		//
+		// But the rule is "not while SOMEBODY ELSE is driving", which is not the
+		// same as the controller-or-nothing test the quality dial uses. Free
+		// controls are the ordinary state of a room with one person in it —
+		// the agent itself reports "nobody has the control" as a normal
+		// condition — and a delete button that refuses until you have claimed
+		// controls you do not otherwise need is a button that looks broken. The
+		// gate exists to protect whoever is driving from having the record
+		// pulled out from under them; with nobody driving there is nobody to
+		// protect.
+		//
+		// The refusal answers the session that asked rather than going quiet,
+		// because a delete button that appears to do nothing is one somebody
+		// presses again.
+		if holder, name := s.room.Controller(); !mayForget(holder, s.memberID, s.privileged) {
+			s.sendOnChannel(jsonLine(map[string]any{
+				"t": "agent_forget_denied", "who": name,
+				"at": time.Now().UnixMilli(),
+			}))
+			return
+		}
+		s.handleAgentPanel(ev)
 		return
 
 	case "pause", "resume":
@@ -1283,4 +1377,127 @@ func (s *Session) Close() {
 		s.ws.Close()
 		s.logf("session closed")
 	})
+}
+
+// handleAgentPanel serves the chat panel's three messages.
+//
+// Every one of them can find no agent, and every one of them answers the same
+// way: by telling this browser what the situation is, with the remedy. That is
+// the whole reason Availability carries a Reason and a Remedy as fields rather
+// than a sentence — the panel draws them, and this function never has to
+// compose English.
+func (s *Session) handleAgentPanel(ev inputEvent) {
+	desk := s.room.AgentDeskOrNil()
+	if desk == nil {
+		// No agent plane in this build or this deployment. Reported as absent,
+		// which is what it is, rather than ignored — a chat box that swallows
+		// messages is worse than one that says it is not connected.
+		s.sendAgentStatus(AgentAvailability{
+			Reason: "this desktop was started without an agent plane",
+			Remedy: "set AGENT_SOCK, or MCP_SOCK, and restart the desktop",
+		})
+		return
+	}
+
+	switch ev.T {
+	case "agent_say":
+		chat, err := desk.Send(ev.Chat, s.room.NameOf(s.memberID), ev.Text)
+		if err != nil {
+			// The message is already on the transcript — the coordinator puts
+			// it there before it tries to send, so nobody's words vanish
+			// because the runtime was out. What is missing is an answer, so
+			// this closes the exchange rather than leaving it spinning.
+			s.room.AgentEnd(AgentEnd{Chat: chat, Ok: false, Text: err.Error()})
+			s.sendAgentStatus(desk.Availability())
+			return
+		}
+		s.logf("asked the agent something")
+
+	case "agent_cancel":
+		if err := desk.Cancel(ev.Chat); err != nil {
+			s.sendAgentStatus(desk.Availability())
+		}
+
+	case "agent_history":
+		if err := desk.History(ev.Session); err != nil {
+			s.sendAgentStatus(desk.Availability())
+		}
+
+	case "agent_export":
+		// Reading, like history, and above the control check for the same
+		// reason: taking a copy of what the agent did is not driving the
+		// desktop, and the person most likely to want the record is the one
+		// watching somebody else work.
+		if err := desk.Export(ev.Session, ev.Format); err != nil {
+			s.sendAgentStatus(desk.Availability())
+		}
+
+	case "agent_console_open":
+		// The member id travels so the runtime's output comes back to THIS
+		// browser. A console is the one thing on this plane that is not
+		// broadcast — see Room.AgentConsole.
+		if err := desk.ConsoleOpen(s.memberID, ev.Term, ev.Cols, ev.Rows); err != nil {
+			s.sendOnChannel(jsonLine(map[string]any{
+				"t": AgentConsoleCloseType, "term": ev.Term,
+				"text": err.Error(), "at": time.Now().UnixMilli(),
+			}))
+		}
+		s.logf("opened a console")
+
+	case "agent_console_data":
+		_ = desk.ConsoleData(ev.Term, ev.Bytes)
+
+	case "agent_console_resize":
+		_ = desk.ConsoleResize(ev.Term, ev.Cols, ev.Rows)
+
+	case "agent_console_close":
+		_ = desk.ConsoleClose(ev.Term)
+
+	case "agent_command":
+		if err := desk.Command(ev.Chat, ev.Kind, ev.Text); err != nil {
+			s.sendAgentStatus(desk.Availability())
+			return
+		}
+		s.logf("sent the agent a %s command", ev.Kind)
+
+	case "agent_forget":
+		if err := desk.Forget(ev.Session, ev.All); err != nil {
+			s.sendAgentStatus(desk.Availability())
+			return
+		}
+		what := fmt.Sprintf("deleted session %d from the agent's history", ev.Session)
+		if ev.All {
+			what = "deleted the agent's whole history"
+		}
+		s.room.witness.Note(s.room.NameOf(s.memberID), what, "")
+		s.logf("%s", what)
+	}
+}
+
+// mayForget is the whole rule for deleting the agent's history, on its own so
+// it can be stated once and tested without a room and a datachannel.
+//
+// Not "are you the controller". Free controls are the ordinary state of a room
+// with one person in it, and requiring a claim on controls they do not
+// otherwise need would make the button look broken for the common case. What
+// this refuses is deleting the shared record while SOMEBODY ELSE is driving.
+func mayForget(holder, me string, privileged bool) bool {
+	return privileged || holder == "" || holder == me
+}
+
+// sendAgentStatus tells THIS browser about the agent, rather than the room.
+//
+// The room-wide broadcast (Room.AgentStatus) is for changes everybody needs to
+// see. This one is for the two cases that concern one session: the panel
+// opening, which has to start from the truth rather than from a default, and a
+// message that could not be sent, where the person who sent it is the one owed
+// an explanation.
+func (s *Session) sendAgentStatus(a AgentAvailability) {
+	s.sendOnChannel(jsonLine(map[string]any{
+		"t": AgentStatusType, "present": a.Present, "ready": a.Ready,
+		"reason": a.Reason, "remedy": a.Remedy,
+		"provider": a.Provider, "model": a.Model, "mode": a.Mode,
+		"models": a.Models, "reachable": a.Reachable, "commands": a.Commands,
+		"at": time.Now().UnixMilli(),
+	}))
 }
