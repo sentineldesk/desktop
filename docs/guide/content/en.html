@@ -40,7 +40,7 @@
   </ul>
 
   <p>People drive it through a control layer in the browser. The agent drives it
-  through a local socket with 134 MCP tools. Neither is a guest of the
+  through a local socket with 137 MCP tools. Neither is a guest of the
   other.</p>
 
   <div class="note">
@@ -75,7 +75,7 @@
     <tr><td>Human control</td><td>WebSocket signalling and a DataChannel; XTEST
       injection, XFixes cursors, XShape peer pointers, EWMH</td></tr>
     <tr><td>Agent control</td><td>MCP over a <code>0600</code> Unix socket,
-      134 tools</td></tr>
+      137 tools</td></tr>
     <tr><td>Reading the screen</td><td>AT-SPI accessibility tree, Chrome
       DevTools Protocol — structure, not pixels</td></tr>
     <tr><td>Web interface</td><td><code>go:embed</code>, served with content
@@ -110,12 +110,12 @@
 </ul>
 
   <h3 id="capabilities-agent">An agent, through MCP</h3>
-  <p>134 tools, in families:</p>
+  <p>137 tools, in families:</p>
   <table>
     <tr><th>Family</th><th>What it covers</th></tr>
     <tr><td>Finding the others</td><td>Describe a task and get back the tools
       that do it, with their schemas — so the agent does not have to hold all
-      120 in mind at once</td></tr>
+      137 in mind at once</td></tr>
     <tr><td>Pointer and keyboard</td><td>Move, click, drag, scroll, type, key
       combinations</td></tr>
     <tr><td>Windows and desktops</td><td>List, activate, move, resize, minimise,
@@ -139,10 +139,13 @@
       remove packages; control services</td></tr>
     <tr><td>Capture</td><td>Screenshots, recording, and starting or stopping an
       external stream</td></tr>
+    <tr><td>Secrets</td><td>Use a credential without ever seeing it — reference
+      it by name in a command, or type it into a login form by element</td></tr>
     <tr><td>The room</td><td>See who is present, ask for control, release
       it</td></tr>
-    <tr><td>Safety net</td><td>Snapshots it can roll back to, and a log of what
-      it did</td></tr>
+    <tr><td>Safety net</td><td>Snapshots it can roll back to, a log of what it
+      did, and one timeline of what everybody did — including the commands
+      people typed while the agent was not looking</td></tr>
   </table>
   <p>See <a href="#ai-agent">The AI agent</a> for how to connect one and how to
   limit what it may do.</p>
@@ -1039,7 +1042,7 @@ lsof -nP -iUDP:5000</code></pre>
 <section id="ai-agent" data-track="use">
   <h2>The AI agent</h2>
 
-  <p>SentinelDesk exposes <b>134 tools</b> over a local Unix socket using the
+  <p>SentinelDesk exposes <b>137 tools</b> over a local Unix socket using the
   Model Context Protocol. An AI host — Claude Code, Claude Desktop, or anything
   else that speaks MCP — connects through a thin bridge:</p>
 

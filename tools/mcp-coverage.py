@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Coverage pass: INVOKE every one of the 134 tools and classify each.
+"""Coverage pass: INVOKE every tool the catalogue serves and classify each.
 
 This complements mcp-validate.py's deep effect checks. Here the goal is
 reachability and safety: every tool is called with safe arguments and sorted
@@ -303,7 +303,7 @@ def main():
     m.call("release_control", {})
 
     total = len(names)
-    print(f"\n=== 134-tool coverage: {total} tools ===")
+    print(f"\n=== catalogue coverage: {total} tools ===")
     print(f"RESPONDED (handled, no error): {len(responded)}")
     print(f"REFUSED (sensible isError):    {len(refused)}")
     print(f"SKIPPED (destructive/external):{len(skipped)}")

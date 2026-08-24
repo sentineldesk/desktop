@@ -29,7 +29,7 @@ flowchart LR
     end
     subgraph container["One container — one shared X display"]
         daemon["sentineldesk<br/>(single Go binary)"]
-        sock["Unix socket 0600<br/>MCP — 134 tools"]
+        sock["Unix socket 0600<br/>MCP — 137 tools"]
         x["Xvfb :0 · Openbox · XFCE panel<br/>Chromium · VLC · Remmina · terminals"]
         gst["GStreamer in-process<br/>NVENC → VA-API → x264 → VP8"]
         daemon --- sock
@@ -420,7 +420,7 @@ verification means `make up` and exercising it.
 | Audio | PulseAudio null sink → `opusenc`; a remapped source so the browser's microphone appears as a real input device |
 | Transport | Pion WebRTC v4, GCC congestion control over TWCC, PLI keyframes, NACK, Opus in-band FEC; an embedded STUN responder |
 | Human control | WebSocket signalling + DataChannel, XTEST injection, XFixes cursors, XShape peer pointers, EWMH |
-| Agent control | MCP over a `0600` Unix socket, 134 tools, each classified by risk |
+| Agent control | MCP over a `0600` Unix socket, 137 tools, each classified by risk |
 | Reading the screen | AT-SPI accessibility tree, Chrome DevTools Protocol — structure, not pixels |
 | Recording & streaming | screenshots; record to MP4 / WebM / MKV; restream to RTMP (YouTube, Twitch, Facebook) or a custom sink — side pipelines run as `gst-launch` children so a bad one can never take the desktop down |
 | Remote desktops | RDP, VNC and SPICE opened onto the shared screen via Remmina (or the direct clients as a fallback) |
@@ -507,7 +507,7 @@ cmd/sentineldesk/     wiring only: flags, HTTP mux, WS upgrade, MCP socket
 internal/desktop/     X11: XTEST injection, XFixes cursor, clipboard, peer pointers
 internal/media/       GStreamer: pipelines, encoder selection, recording, restream, mic
 internal/stream/      WS sessions, the shared Room, auth, TLS, file manager, STUN
-internal/mcp/         the MCP server, its 134 tools, the risk registry and policy
+internal/mcp/         the MCP server, its 137 tools, the risk registry and policy
 internal/webui/       the browser client, embedded with go:embed (build output)
 pkg/capability/       the room's verbs defined once: Def, risk/visibility, the control gate
 pkg/config/           environment-only configuration
@@ -549,7 +549,7 @@ config file, by design; every knob is a documented environment variable.
   for the people using the desktop, in English, Spanish and Portuguese
   (published with GitHub Pages).
 - **[MCP tool reference](https://github.com/sentineldesk/desktop/blob/main/docs/mcp.md)** —
-  all 134 tools.
+  all 137 tools.
 - **[Packages](https://github.com/sentineldesk/desktop/blob/main/docs/packages.md)** —
   what is in the lite and full images, and why.
 

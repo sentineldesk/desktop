@@ -39,7 +39,7 @@ sentineldesk-cli connect claude-code \
 It authenticates at the WebSocket door (the only place credentials become
 keys), verifies the gateway end to end, registers the server in Claude Code
 when the `claude` CLI is on PATH, and prints how to disconnect. The remote
-host gets the ten `workroom_*` control-plane tools plus the room's own 128
+host gets the ten `workroom_*` control-plane tools plus the room's own 137
 desktop tools, behind the same policy ceiling and the same control gate a
 local host meets — the gateway proxies to the very bridge described below.
 
@@ -111,7 +111,7 @@ sudo -u sentineldesk /usr/local/bin/sentineldesk -mcp-stdio \
   -mcp-sock "$(. /etc/sentineldesk/env; echo "$MCP_SOCK")"
 ```
 
-## Available tools (134)
+## Available tools (137)
 
 **The catalogue is versioned.** `initialize` reports the build in
 `serverInfo.version` and the catalogue size in
@@ -148,6 +148,12 @@ the desktop?** Risk is no substitute. `ui_click` is `write` and gated,
 `set_volume` is `write` and not; `start_restream` is `danger` and gated,
 `write_file` is `danger` and not. A client that wants to call `request_control`
 at the right moment reads this rather than carrying its own copy of the list.
+
+A few tools also declare `sentineldesk/timeoutMs` — `ui_find` at 10s,
+`browser_goto` at 45s. It is advisory, and it says how long a client is entitled
+to wait before it stops waiting. **Stopping is not cancelling**: the work may
+still be running here, and only `notifications/cancelled` says otherwise. Absent
+on every other verb, which means unbounded.
 
 **🔎 Finding the right tool**
 
@@ -212,6 +218,8 @@ the tree already says what each thing is and where it is.
 | `browser_click` | Click by CSS selector: exact, no coordinates |
 | `browser_type` | Type into an input or textarea by selector, firing the events a real page expects |
 | `browser_wait_for` | Wait until a selector appears |
+| `browser_wait_until` | Wait until a **JavaScript condition** is true. For state a page changes without touching the DOM — "this video has ended" fires no event — the page tests it on its own timer, so a three-minute wait costs one call instead of a dozen polls. Capped at ten minutes |
+| `browser_element` | Everything about one selector: whether it exists, whether it is really **visible**, its text, label, box and disabled state — and for `<video>`/`<audio>` its `currentTime`, `duration`, `paused`, `muted` and `ended`. Reading a media clock twice tells "my click did nothing" from "a new item started" |
 | `browser_eval` | Run JavaScript in the page and return the result — the most capable of the set |
 
 These drive the real DOM. Where `ui_*` reads the desktop as an accessibility
@@ -249,6 +257,7 @@ tree, this reads a page as a document, which is both smaller and exact.
 |---|---|
 | `launch_app` | Run a program (detached) — `as_root` for administration GUIs |
 | `list_installed_apps` | Applications with a `.desktop` entry |
+| `list_commands` | The command-line programs on PATH, grouped by the packaging system's own sections (net, vcs, admin, text, editors, devel) rather than hundreds of bare names. Ask for a category or filter by name; each hit carries its package and is marked when it also has a desktop entry |
 | `list_processes` | pid, cpu%, mem%, command, with an optional filter |
 | `kill_process`, `is_running` | Kill / check |
 | `run_command` | Shell command with stdout/stderr/exit — runs in a terminal window on the shared screen, `as_root` for privileges |
@@ -264,12 +273,16 @@ tree, this reads a page as a document, which is both smaller and exact.
 | `job_wait` | Wait for it. **A timeout returns what there is so far and leaves the job running** |
 | `job_abort` | Stop one: signalled first, killed if it will not go |
 | `job_list` | Everything on this desktop, newest first, including work somebody else started |
+| `sleep` | **Wait on purpose.** Runs as a job in a terminal window, counting down out loud so the room can see the agent is waiting and for how long. A short wait returns at once, a long one hands back a job id |
 
 There is no invisible way to run a command here, and that is the point rather
 than a side effect. Every command opens a window people can watch, its two
 streams land in `/tmp/sentineldesk/jobs/<id>/` where they can be read afterwards,
 and anyone in the room can stop it mid-run. `run_command` is a job that waits;
-`job_start` is a job that does not.
+`job_start` is a job that does not; `sleep` is a job whose whole content is the
+waiting. Reach for it whenever the delay IS the step — start a recording, sleep
+three minutes, stop it — and never use a tool's timeout to wait instead: that
+reports a failure for something that went exactly to plan.
 
 The distinction between a timeout and a kill is the one worth internalising.
 `run_command` with a 15-second timeout used to *destroy* the process at fifteen
@@ -292,14 +305,41 @@ On top of that, `as_root: true` on `run_command`, `launch_app`, `read_file`,
 `write_file` and `list_directory`, and `user: "root"` on `shell_open` for a
 persistent root terminal.
 
+**🗝️ Secrets** — using a credential without ever holding it
+
+| Tool | What it does |
+|---|---|
+| `secret_list` | The names of the secrets this desktop holds — **never their values**, which no tool returns by any means |
+| `type_secret` | Type one into a field on screen **by `ref`**, for a login form. Needs control, and declares `injects` like every other verb that drives the keyboard |
+
+Two halves of one bargain. For a **command**, write `{{secret:name}}` inside it:
+the value becomes a shell variable and arrives in the process's environment, so
+it never appears on the shared screen, in the shell history, or in anything
+returned to the agent. For a **form**, that cannot work — the value has to become
+keystrokes — and keystrokes were exactly what an agent could only produce by
+putting the secret in a `type_text` argument, which then lives in the
+conversation, the transcript and the action log permanently. `type_secret` is
+the way not to.
+
+**The `ref` is required, and it is the load-bearing half rather than a
+convenience.** Typing "the secret" with no target sends it wherever focus happens
+to be, and focus is not a property this tool controls: a dialog that stole it
+between `ui_find` and the call would receive somebody's password.
+
+A name the vault does not hold is a question rather than a failure — the people
+here are asked to type it, and what they type is not written to disk, not
+logged, and not returned. Which makes the rule for an agent a short one:
+**never ask a person for a password in conversation.** Reference it and let it
+be used.
+
 **📋 Clipboard · 🔊 audio · ⏱️ state**
 
 | Tool | What it does |
 |---|---|
 | `get_clipboard`, `set_clipboard` | The desktop's clipboard |
 | `get_audio_state`, `set_volume` | Sink, volume and mute |
-| `wait` | Sleep N ms |
-| `get_desktop_info` | WM, resolution, uptime, memory, encoder, joystick, recording |
+| `wait` | Sleep N ms — a short, silent pause. For a deliberate wait of minutes, `sleep` is the one that shows |
+| `get_desktop_info` | WM, resolution, uptime, load, memory, encoder, whether a recording is running |
 | `desktop_state` | Windows, focus, desktops, screen and room in one snapshot |
 
 **🖥️ Persistent terminal** — `run_command` is one-shot; this is a real shell
@@ -391,21 +431,47 @@ which is why opening and closing one require control.
 | Tool | What it does |
 |---|---|
 | `action_log` | A record of every call: time, arguments, result, duration. While recording it also carries the **minute within the video** |
+| `activity` | The commands **people** typed in any terminal and the tools **you** called, in one timeline, oldest first, with who did each |
 | `snapshot_create` | Restore point: the home plus the list of installed packages |
 | `snapshot_list`, `snapshot_delete` | Management |
 | `snapshot_restore` | Returns the home to the saved state and reports which packages were installed afterwards |
+
+`action_log` answers *what did I do*; `activity` answers *what happened*. That is
+the one to read after being interrupted, after a person took the controls, or
+whenever something changed and the agent did not change it — cheaper and far
+more reliable than inferring it from a screenshot. `source: person` and
+`source: agent` split the timeline when only one side is in question.
 
 **🎥 Recording and streaming**
 
 | Tool | What it does |
 |---|---|
-| `start_recording`, `stop_recording` | Record to **mp4 / webm / mkv**, closed cleanly |
+| `start_recording`, `stop_recording` | Record to **mp4 / webm / mkv**, closed cleanly. `clean: true` keeps the pointer and the who-is-driving name tags out of the take; `window: <id or title>` records one window instead of the screen |
 | `get_recording_status`, `list_recordings` | Status and files |
+| `deliver_recording` | Hand a recording already on disk to the browser of whoever is watching |
 | `start_restream`, `stop_restream`, `list_restreams` | Also send the desktop to **RTMP** (YouTube/Twitch/Facebook), **SRT** or **UDP** (VLC/OBS), reusing the live encode |
+
+The two halves of `clean` cost different things. The pointer was hard-coded into
+the pipeline, so dropping it changes the file and nothing else. The name tags are
+real windows on one X display, so hiding them hides them from **everybody
+watching live**, for as long as the recording runs — which is why it is an
+option rather than a default, and why `stop_recording` puts them back whatever
+ended the recording, including a run that was cut off. `window:` is the answer to
+"something might open in the middle of my take" that does not depend on
+predicting what: nothing outside that window can be in the frame, and a title
+matching more than one window is refused with the list rather than recording
+whichever the window manager named first.
+
+`deliver_recording` exists because `stop_recording` delivers only at the moment
+it stops, and only to whoever is watching then — a recording that ended with
+nobody in a browser had no route back at all. It is confined to the recordings
+directory, checked on the **resolved** path so that `..` and a symlink both land
+outside and are refused: "hand this file to a browser", pointed at any path the
+caller chooses, is an exfiltration tool wearing a helpful name.
 
 ## Finding tools without loading all of them
 
-A hundred and twenty schemas is a real amount of a model's context, spent
+A hundred and thirty-seven schemas is a real amount of a model's context, spent
 before it has read the request. `tool_search` is the way around it: describe the
 task and get back the handful of tools that do it.
 
@@ -415,7 +481,7 @@ task and get back the handful of tools that do it.
 
 ```json
 {
-  "matched": 6, "of": 120,
+  "matched": 6, "of": 137,
   "tools": [
     {"name": "ssh_connect",  "category": "ssh", "risk": "danger", "description": "…", "inputSchema": {…}},
     {"name": "ssh_copy_id",  "category": "ssh", "risk": "danger", "description": "…", "inputSchema": {…}},
@@ -489,13 +555,13 @@ tree is parsed — so a tool that returns ok while doing nothing fails it.
 tools/mcp-validate.py --container sentineldesk
 ```
 
-`tools/mcp-coverage.py` is the breadth pass to that depth: it INVOKES all 128
+`tools/mcp-coverage.py` is the breadth pass to that depth: it INVOKES all 137
 tools with safe arguments and sorts each into responded, refused (a sensible
 guard), or skipped — the destructive and externally-dependent ones
 (`install_packages`, `ssh_*` with no host, `start_restream` with no
 destination…), each named, never dropped silently. Anything that crashes,
 times out or comes back unhandled is a failure. Last run on the deployed
-image: 134/134 accounted for, 0 failures.
+image, when the catalogue stood at 134: 134/134 accounted for, 0 failures.
 
 ```bash
 tools/mcp-coverage.py --container sentineldesk
@@ -564,7 +630,7 @@ controls are held, so the model learns to call `take_control` first.
 | `list_files` | read | List a directory under `FILES_ROOT` |
 | `make_dir` / `rename_path` | write | Create, rename or move a path |
 
-The list is deliberately the human's surface, not the 134-tool catalogue the
+The list is deliberately the human's surface, not the 137-tool catalogue the
 socket plane serves: a browser agent inherits a *person's* session, so it gets a
 person's reach. The full catalogue, and the host-spawned bridge that serves it,
 stay exactly as documented above.

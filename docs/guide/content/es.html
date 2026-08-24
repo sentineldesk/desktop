@@ -42,7 +42,7 @@
   </ul>
 
   <p>Las personas lo manejan desde una capa de control en el navegador. El
-  agente lo maneja por un socket local con 134 herramientas MCP. Ninguno es
+  agente lo maneja por un socket local con 137 herramientas MCP. Ninguno es
   invitado del otro.</p>
 
   <div class="note">
@@ -78,7 +78,7 @@
       inyección XTEST, cursores XFixes, punteros de pares con XShape,
       EWMH</td></tr>
     <tr><td>Control del agente</td><td>MCP sobre un socket Unix
-      <code>0600</code>, 134 herramientas</td></tr>
+      <code>0600</code>, 137 herramientas</td></tr>
     <tr><td>Leer la pantalla</td><td>Árbol de accesibilidad AT-SPI, Chrome
       DevTools Protocol — estructura, no píxeles</td></tr>
     <tr><td>Interfaz web</td><td><code>go:embed</code>, servida con ETags sobre
@@ -114,12 +114,12 @@
 </ul>
 
   <h3 id="capabilities-agent">Un agente, por MCP</h3>
-  <p>134 herramientas, por familias:</p>
+  <p>137 herramientas, por familias:</p>
   <table>
     <tr><th>Familia</th><th>Qué cubre</th></tr>
     <tr><td>Encontrar las demás</td><td>Describís una tarea y te devuelve las
       herramientas que la hacen, con sus esquemas — así el agente no tiene que
-      tener las 120 en la cabeza a la vez</td></tr>
+      tener las 137 en la cabeza a la vez</td></tr>
     <tr><td>Puntero y teclado</td><td>Mover, clic, arrastrar, rueda, escribir,
       combinaciones de teclas</td></tr>
     <tr><td>Ventanas y escritorios</td><td>Listar, activar, mover, redimensionar,
@@ -144,9 +144,14 @@
       y quitar paquetes; controlar servicios</td></tr>
     <tr><td>Captura</td><td>Capturas de pantalla, grabación, y arrancar o
       detener una transmisión externa</td></tr>
+    <tr><td>Secretos</td><td>Usar una credencial sin verla nunca — referenciarla
+      por nombre dentro de un comando, o escribirla en un formulario de login
+      por elemento</td></tr>
     <tr><td>La sala</td><td>Ver quién está, pedir el control, soltarlo</td></tr>
-    <tr><td>Red de seguridad</td><td>Instantáneas a las que puede volver, y un
-      registro de lo que hizo</td></tr>
+    <tr><td>Red de seguridad</td><td>Instantáneas a las que puede volver, un
+      registro de lo que hizo, y una línea de tiempo de lo que hizo todo el
+      mundo — incluidos los comandos que las personas escribieron mientras el
+      agente no miraba</td></tr>
   </table>
   <p>Mirá <a href="#ai-agent">El agente de IA</a> para saber cómo conectar uno y
   cómo limitar lo que puede hacer.</p>
@@ -1027,7 +1032,7 @@ lsof -nP -iUDP:5000</code></pre>
 <section id="ai-agent" data-track="use">
   <h2>El agente de IA</h2>
 
-  <p>SentinelDesk expone <b>134 herramientas</b> por un socket Unix local usando
+  <p>SentinelDesk expone <b>137 herramientas</b> por un socket Unix local usando
   el Model Context Protocol. Un host de IA — Claude Code, Claude Desktop, o
   cualquier cosa que hable MCP — se conecta a través de un puente delgado:</p>
 
