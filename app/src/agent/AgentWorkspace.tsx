@@ -33,7 +33,6 @@ import { useTranslation } from 'react-i18next'
 import {
   IconArrowRight,
   IconBox,
-  IconCamera,
   IconCheck,
   IconChevronRight,
   IconCopy,
@@ -49,7 +48,6 @@ import {
   IconPencil,
   IconPhoto,
   IconPlayerPlayFilled,
-  IconPlayerRecordFilled,
   IconPlayerStopFilled,
   IconPlus,
   IconSearch,
@@ -551,6 +549,9 @@ export function AgentWorkspace(props: {
   onExpand(v: boolean): void
   onSettings(): void
   onLogout?: (() => void) | undefined
+  /** The stream's sound, as the top bar shows it — one state, two buttons. */
+  muted: boolean
+  onAudio(): void
 }) {
   const { t } = useTranslation()
   const d = props.desktop
@@ -1395,7 +1396,7 @@ export function AgentWorkspace(props: {
                       onClick={() => d.sendInput({ t: 'capture', action: 'shot' })}
                       title={t('ws.shot')}
                     >
-                      <IconCamera />
+                      <CamGlyph />
                     </Button>
                     {d.recording ? <RecClock since={d.recordingSince} /> : null}
                     <Button
@@ -1410,7 +1411,15 @@ export function AgentWorkspace(props: {
                       }
                       title={t(d.recording ? 'ws.recStop' : 'ws.rec')}
                     >
-                      {d.recording ? <IconPlayerStopFilled /> : <IconPlayerRecordFilled />}
+                      <RecGlyph on={d.recording} />
+                    </Button>
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      onClick={props.onAudio}
+                      title={t('toolbar.audio')}
+                    >
+                      <AudioGlyph muted={props.muted} />
                     </Button>
                     <Button size="xs" variant={yours ? 'outline' : 'default'} onClick={d.toggleControl}>
                       {yours ? t('room.release') : t('room.take')}
@@ -1448,7 +1457,7 @@ export function AgentWorkspace(props: {
                               onClick={() => d.sendInput({ t: 'capture', action: 'rec_stop' })}
                               title={t('ws.recStop')}
                             >
-                              <IconPlayerStopFilled />
+                              <RecGlyph on />
                             </Button>
                           </>
                         ) : null}
@@ -1681,6 +1690,60 @@ export function AgentWorkspace(props: {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+/* The top bar's own drawings, so the canvas header speaks the same icon
+ * language as Desktop mode. The stroke styling the .tb-tool CSS provides up
+ * there is carried inline here, because these sit inside shadcn Buttons. */
+function ToolGlyph(props: { children: React.ReactNode }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="size-3.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {props.children}
+    </svg>
+  )
+}
+
+function CamGlyph() {
+  return (
+    <ToolGlyph>
+      <path d="M4 8.5h3l1.6-2.2h6.8L17 8.5h3v9.5H4z" />
+      <circle cx="12" cy="13" r="3" />
+    </ToolGlyph>
+  )
+}
+
+function RecGlyph({ on }: { on: boolean }) {
+  return (
+    <ToolGlyph>
+      <circle cx="12" cy="12" r="7.5" />
+      {on ? (
+        <rect x="8.8" y="8.8" width="6.4" height="6.4" rx="1" fill="currentColor" stroke="none" />
+      ) : (
+        <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
+      )}
+    </ToolGlyph>
+  )
+}
+
+function AudioGlyph({ muted }: { muted: boolean }) {
+  return (
+    <ToolGlyph>
+      <path d="M4.5 9.5h3l4-3.2v11.4l-4-3.2h-3z" />
+      {muted ? (
+        <path d="M16 9.5l5 5M21 9.5l-5 5" />
+      ) : (
+        <path d="M15.5 9a4.2 4.2 0 010 6M17.5 6.5a7.6 7.6 0 010 11" />
+      )}
+    </ToolGlyph>
   )
 }
 

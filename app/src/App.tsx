@@ -400,6 +400,14 @@ export function App() {
             onExpand={setExpanded}
             onSettings={() => setSettingsOpen(true)}
             onLogout={logout}
+            muted={muted || policyMuted}
+            onAudio={() => {
+              /* Same gesture as the top bar's Audio: compute from what the
+               * icon showed, and a click that lifts a policy mute is a
+               * choice to hear. */
+              setMuted(!(muted || policyMuted))
+              setPolicyMuted(false)
+            }}
           />
         ) : (
           <div id="stage-desktop">{live || showStatus ? screenEl : null}</div>
