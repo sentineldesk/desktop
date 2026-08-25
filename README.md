@@ -1,8 +1,23 @@
-# SentinelDesk — a collaborative desktop for people and AI agents
+<div align="center">
 
-A complete Linux desktop that runs **inside a Docker container with no physical
-monitor**, streams to the browser over **WebRTC**, and is driven at the same
-time by people and by an AI agent that sees and acts on the *same* X display.
+# SentinelDesk
+
+**People and AI agents, one desktop — and both can drive.** A complete Linux desktop inside a Docker container with no physical monitor, streamed to the browser over WebRTC, driven at the same time by people and by an AI agent acting on the *same* X display. Every action goes through one gateway that decides and records it.
+
+[**Documentation**](https://sentineldesk.github.io/desktop/docs/guide/index.html) · [**Quick start**](#quick-start) · [**What is in it**](#what-is-in-it) · [**The two planes**](#the-two-planes) · [**Building**](#building)
+
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
+![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)
+
+</div>
+
+<!-- The demo. GitHub only renders a video PLAYER for files uploaded as
+     attachments: edit this README on github.com, drag demo-sentineldesk.mp4
+     into the editor, and replace the line below with the
+     user-attachments URL it generates. A committed .mp4 referenced by path
+     renders as a plain link, so the raw URL here is the fallback, not the
+     goal. -->
+https://github.com/sentineldesk/desktop/raw/main/demo-sentineldesk.mp4
 
 **This is a standalone, self-contained product.** One `docker compose up` gives
 a full desktop that people and an agent share — no control plane, no database,
@@ -16,8 +31,8 @@ humans and machines and nothing more.
 
 **📖 Documentation** — the full user guide and reference are published from this
 repository with GitHub Pages: **<https://sentineldesk.github.io/desktop/docs/guide/index.html>**
-(English, Spanish and Portuguese). It is where the **Docs** button in the
-desktop's rail goes.
+(English, Spanish and Portuguese). It is where **Documentation** in the
+desktop's user menu goes.
 
 ```mermaid
 flowchart LR
