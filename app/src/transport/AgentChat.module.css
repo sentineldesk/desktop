@@ -553,7 +553,7 @@
 }
 .session:hover .sessionDrop,
 .sessionDrop:focus-visible { opacity: 1; }
-.sessionDrop:hover { color: var(--sd-bad, #e5484d); }
+.sessionDrop:hover { color: var(--sd-bad); }
 .sessionDrop svg {
   width: 13px; height: 13px; fill: none; stroke: currentColor;
   stroke-width: 2; stroke-linecap: round;
@@ -715,8 +715,8 @@
 /* The destructive one is the one that looks destructive, and it is NOT the
    default: cancel sits first in the tab order for the same reason. */
 .danger {
-  border-color: var(--sd-bad, #e5484d) !important;
-  color: var(--sd-bad, #e5484d) !important;
+  border-color: var(--sd-bad) !important;
+  color: var(--sd-bad) !important;
 }
 
 /* No divider where there is nothing to divide: on a phone the panel is the

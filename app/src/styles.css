@@ -10,16 +10,16 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * The rail's dress, carried over from the first client verbatim: this design
- * was approved screen by screen, and the React rewrite changes the engine,
- * never the face. Components emit the same ids and classes on purpose. */
+ * The second dress. The first client's rail-over-video design was carried
+ * verbatim into the React rewrite; this replaces it, by the owner's call, with
+ * the two-mode shell approved on the design canvas (2026-08): a 45px top bar
+ * whose centre is the Desktop/Agent switch, a clean desktop with the tools in
+ * that bar, and a full-screen agent workspace. The palette is the neutral
+ * near-black family; the phosphor green survives with ONE meaning — who is
+ * driving the desktop — and is never spent on navigation. */
 
-  /* Archivo, the site's typeface. One variable file covers every weight and
-     width the interface asks for, which is why it is worth shipping at all:
-     a static family would have meant four or five downloads for the same
-     range. It is served from the binary like everything else here — the login
-     screen is the first thing a person sees and must not wait on a font CDN,
-     or depend on the container having a route to one. */
+  /* Archivo stays embedded for anything that still wants it; the shell itself
+     now speaks the system stack. */
   @font-face {
     font-family: 'Archivo';
     font-style: normal;
@@ -29,440 +29,327 @@
     src: url('/fonts/archivo-variable-latin.woff2') format('woff2');
   }
 
-  :root { color-scheme: dark; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; background: #0b0e14; overflow: hidden;
-               font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  /* The split. One variable carries it, so the video, the status overlay and
-     anything else measured against the viewport all shrink together — and the
-     width itself is a rule rather than a number a component holds: 420px is
-     comfortable on a monitor and most of the screen on a laptop, so it is
-     capped by both. */
-  :root { --chat-w: 0px; }
-  body.chat-open { --chat-w: min(420px, 42vw); }
+  html, body { width: 100%; height: 100%; background: var(--sd-bg, #0a0a0a);
+               overflow: hidden;
+               font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #root { width: 100%; height: 100%; }
 
-  /* The ground behind the video, when the panel makes the column a different
-     shape from the desktop.
-     It was pure black, which is right for a cinema and wrong here: the desktop
-     is a bright surface and the letterboxing read as a broken frame around it
-     rather than as space. A ground taken from the theme sits behind the picture
-     the way a mat sits behind a photograph — you stop seeing it, which is the
-     whole job. */
-  #screen { width: calc(100% - var(--chat-w)); height: 100%; object-fit: contain;
-            display: block; background: var(--sd-bg, #0b0f10); cursor: default;
-            outline: none; transition: width .18s ease; }
-  @media (prefers-reduced-motion: reduce) { #screen { transition: none; } }
-
-  /* While the divider is being dragged. The transition above is right when the
-     panel opens and wrong under the cursor: 180ms of easing on every pointer
-     move leaves the video trailing the handle like a rubber band. The rest of
-     it is what stops a drag from selecting the page it crosses. */
-  body.chat-resizing #screen { transition: none; }
-  body.chat-resizing { cursor: col-resize; user-select: none; }
-  body.chat-resizing * { user-select: none !important; }
-
-  /* --- status overlay --------------------------------------------------------
-     The first frame anybody sees, before there is a session or a desktop to
-     show, so it speaks the site's language from the start rather than being a
-     neutral loading screen bolted onto a branded product.
-
-     The palette is fixed dark on purpose: this screen exists before any
-     connection, over black video, and has nothing to adapt to. */
-  #status { position: absolute; inset: 0; display: flex; flex-direction: column;
-            align-items: center; justify-content: center; gap: 20px;
-            color: #93A09A; transition: opacity .3s;
-            background:
-              radial-gradient(1200px 500px at 80% -100px, rgba(176,140,247,.07), transparent 70%),
-              radial-gradient(900px 420px at 12% 0, rgba(76,200,255,.06), transparent 70%),
-              #05070D;
-            font-family: 'Archivo', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-            font-variant-numeric: tabular-nums; }
-  #status.hidden { opacity: 0; pointer-events: none; }
-
-  /* Engineering grid and scanlines, faded out from the centre by a radial mask
-     so the texture never reaches the edges — it reads as an instrument surface
-     rather than a screen door. Shared by both pre-session screens: they are the
-     same surface seen a moment apart, and duplicating it would let them drift.
-     The children need a stacking context of their own to sit above it. */
-  #status::before { content: ""; position: absolute; inset: 0;
-            pointer-events: none; opacity: .8;
-            background-image:
-              repeating-linear-gradient(180deg, rgba(230,240,255,.028) 0 1px, transparent 1px 3px),
-              linear-gradient(rgba(130,170,255,.09) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(130,170,255,.09) 1px, transparent 1px);
-            background-size: auto, 56px 56px, 56px 56px;
-            -webkit-mask-image: radial-gradient(closest-side at 50% 45%, #000, transparent);
-            mask-image: radial-gradient(closest-side at 50% 45%, #000, transparent); }
-  #status > div { position: relative; }
-
-  #status .brand { display: flex; align-items: center; gap: 10px;
-            font-size: 18px; font-weight: 700; font-stretch: 112%;
-            letter-spacing: -.005em; color: #E7EDEA; }
-  #status .brand svg { width: 24px; height: 24px; flex: none;
-            filter: drop-shadow(0 0 6px rgba(63,214,140,.55)); }
-  #status .brand .scr { fill: #3FD68C; }
-  #status .brand .gls { fill: #0b0e14; }
-  #status .brand .std { fill: #2AA96C; }
-
-  /* A scanning bar rather than a spinner: neither one knows how long the wait
-     will be, but a sweep does not imply a percentage the way a circle does. */
-  #status .scan { position: relative; width: 176px; height: 2px; overflow: hidden;
-            border-radius: 2px; background: rgba(255,255,255,.08); }
-  #status .scan::after { content: ""; position: absolute; top: 0; bottom: 0;
-            width: 56px; border-radius: 2px; background: #3FD68C;
-            box-shadow: 0 0 10px #3FD68C;
-            animation: sd-scan 1.4s cubic-bezier(.45,0,.55,1) infinite alternate; }
-  @keyframes sd-scan { from { left: -8px } to { left: 128px } }
-
-  #status #status-text { font-size: 13px; letter-spacing: .01em; }
-  /* A block cursor after the message: the line stays alive while it waits. */
-  #status #status-text::after { content: "▍"; margin-left: 6px; color: #3FD68C;
-            animation: sd-blink 1.1s steps(2) infinite; }
-  @keyframes sd-blink { 50% { opacity: 0 } }
-
-  /* --- the instrument rail ---------------------------------------------------
-     The control layer, floating over live video of a real desktop. Everything it
-     occupies is desktop the person stops seeing, and the background behind it is
-     unpredictable — a terminal, a photo, a light document. It began as frosted
-     glass (55% surface, 74% at rest) and that lost the argument with reality:
-     over a light document the rail washed out to nothing. Near-solid now, by
-     the owner's call — the blur stays for the sliver that is still see-through.
-
-     Control state is encoded by SHAPE, not colour alone: a solid chip means you
-     are driving, a diagonally hatched one means somebody else is. Colour carries
-     the same message twice, for anyone who cannot rely on it. */
-
+  /* ---- tokens ---------------------------------------------------------------
+     The --sd-* family now DERIVES from the shadcn/OpenBot tokens declared in
+     openbot.css (:root light, .dark override), so the vendored workspace and
+     the native shell read from one palette and the theme toggle moves both.
+     Only the state colours are our own: phosphor green keeps its single
+     meaning — who is driving the desktop. */
   :root {
-    --sd-surface: rgba(13,17,16,.93);
-    --sd-panel: rgba(16,22,20,.96);
-    --sd-line: rgba(255,255,255,.16);
-    --sd-line-soft: rgba(255,255,255,.08);
-    --sd-hover: rgba(255,255,255,.07);
-    --sd-ink: #E7EDEA;
-    --sd-dim: #93A09A;
-    --sd-drive: #3FD68C;      /* phosphor: you have control */
-    --sd-drive-ink: #052B17;
-    --sd-watch: #F2B33D;      /* amber: somebody else does */
-    --sd-watch-ink: #2A1C02;
-    --sd-rec: #FF5D55;
-    --sd-focus: #6FD9FF;
+    --sd-bg: var(--background);
+    --sd-surface: var(--card);
+    --sd-panel: var(--popover);
+    --sd-muted: var(--muted);
+    --sd-line: var(--border);
+    --sd-line-soft: color-mix(in srgb, var(--border) 60%, transparent);
+    --sd-hover: color-mix(in srgb, var(--foreground) 5%, transparent);
+    --sd-ink: var(--foreground);
+    --sd-dim: var(--muted-foreground);
+    --sd-faint: color-mix(in srgb, var(--muted-foreground) 60%, var(--background));
+    --sd-drive: #0b8a4e; --sd-drive-ink: #f0fbf5;
+    --sd-watch: #8f6400; --sd-watch-ink: #fff6e1;
+    --sd-rec: #c2352f; --sd-stop: #c2352f;
+    --sd-bad: var(--destructive); --sd-bad-ink: #a8201a;
+    --sd-focus: #0a84c1;
+    --sd-r-sm: var(--radius-sm); --sd-r-md: var(--radius-md);
+    --sd-r-lg: var(--radius-lg); --sd-r-xl: var(--radius-2xl);
+    --sd-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   }
-  /* The viewer's theme wins: the media query carries the OS preference, the
-     data-theme attribute overrides it in both directions. Only tokens change. */
-  @media (prefers-color-scheme: light) {
-    :root {
-      --sd-surface: rgba(250,251,250,.95); --sd-panel: rgba(255,255,255,.97);
-      --sd-line: rgba(8,18,13,.2); --sd-line-soft: rgba(8,18,13,.09);
-      --sd-hover: rgba(8,18,13,.06); --sd-ink: #14201A; --sd-dim: #5A6660;
-      --sd-drive: #0B8A4E; --sd-drive-ink: #F0FBF5;
-      --sd-watch: #8F6400; --sd-watch-ink: #FFF6E1;
-      --sd-rec: #C2352F; --sd-focus: #0A84C1;
-    }
+  .dark {
+    --sd-drive: #3fd68c; --sd-drive-ink: #052b17;
+    --sd-watch: #f2b33d; --sd-watch-ink: #2a1c02;
+    --sd-rec: #fb2c36; --sd-stop: #fb2c36;
+    --sd-bad-ink: #ff8f8a;
+    --sd-focus: #6fd9ff;
   }
-  :root[data-theme="dark"] {
-    --sd-surface: rgba(13,17,16,.93); --sd-panel: rgba(16,22,20,.96);
-    --sd-line: rgba(255,255,255,.16); --sd-line-soft: rgba(255,255,255,.08);
-    --sd-hover: rgba(255,255,255,.07); --sd-ink: #E7EDEA; --sd-dim: #93A09A;
-    --sd-drive: #3FD68C; --sd-drive-ink: #052B17;
-    --sd-watch: #F2B33D; --sd-watch-ink: #2A1C02;
-    --sd-rec: #FF5D55; --sd-focus: #6FD9FF;
-  }
-  :root[data-theme="light"] {
-    --sd-surface: rgba(250,251,250,.95); --sd-panel: rgba(255,255,255,.97);
-    --sd-line: rgba(8,18,13,.2); --sd-line-soft: rgba(8,18,13,.09);
-    --sd-hover: rgba(8,18,13,.06); --sd-ink: #14201A; --sd-dim: #5A6660;
-    --sd-drive: #0B8A4E; --sd-drive-ink: #F0FBF5;
-    --sd-watch: #8F6400; --sd-watch-ink: #FFF6E1;
-    --sd-rec: #C2352F; --sd-focus: #0A84C1;
+  /* The tokens the agent-question card was written against, mapped onto the
+     family above. They were referenced and never defined — the card rendered
+     transparent — so this is a bug fix as much as a rename. */
+  :root {
+    --ink: var(--sd-ink); --surface: var(--sd-panel);
+    --ok: var(--sd-drive); --on-solid: var(--sd-drive-ink);
+    --line-base: var(--sd-line); --line-focus: var(--sd-focus);
+    --text-sm: 13px; --text-xs: 11px; --radius-button: var(--sd-r-md);
   }
 
   [hidden] { display: none !important; }
   :focus-visible { outline: 2px solid var(--sd-focus); outline-offset: 2px;
              border-radius: 4px; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--sd-line); border-radius: 6px; }
+  * { scrollbar-width: thin; scrollbar-color: var(--sd-line) transparent; }
 
-  #toolbar { position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
-             z-index: 10; width: 240px; display: flex; flex-direction: column;
-             max-height: calc(100% - 24px); overflow-x: hidden; overflow-y: auto;
-             font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
-             font-variant-numeric: tabular-nums;
-             background: var(--sd-surface); color: var(--sd-ink);
-             backdrop-filter: blur(16px) saturate(1.3);
-             -webkit-backdrop-filter: blur(16px) saturate(1.3);
-             border: 1px solid var(--sd-line); border-radius: 12px;
-             box-shadow: 0 16px 48px rgba(0,0,0,.42);
-             transition: width .26s cubic-bezier(.4,0,.2,1),
-                         transform .32s cubic-bezier(.4,0,.2,1), opacity .26s; }
-  /* The scrollbar would cut the frosted edge; the rail scrolls without one. */
-  #about { padding: 8px 12px 9px; font-size: 9px; letter-spacing: .08em;
-        color: var(--sd-dim); opacity: .75; user-select: text;
-        border-top: 1px solid var(--sd-line-soft); margin-top: 4px; }
-  #about:empty { display: none; }
-  #toolbar { scrollbar-width: none; }
-  #toolbar::-webkit-scrollbar { display: none; }
-  #toolbar.collapsed { width: 58px; }
-  #toolbar.hidden { transform: translate(calc(-100% - 40px), -50%);
-             opacity: 0 !important; pointer-events: none; }
+  /* ---- the shell ------------------------------------------------------------
+     One viewport, never scrolls: a 45px bar and whatever the mode puts below. */
+  .shell { display: flex; flex-direction: column; width: 100%; height: 100%;
+           background: var(--sd-bg); color: var(--sd-ink); }
+  .shell-main { flex: 1; min-height: 0; position: relative; display: flex; }
 
-  /* A 3px strip repeating the control signature, readable even when the rail is
-     collapsed to icons and there is no room for words. */
-  #rail-sig { position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px;
-             border-radius: 0 2px 2px 0; background: var(--sd-line); }
-  #toolbar.you-control #rail-sig {
-             background: var(--sd-drive); box-shadow: 0 0 12px var(--sd-drive); }
-  #toolbar.watching #rail-sig {
-             background: repeating-linear-gradient(180deg,
-                         var(--sd-watch) 0 6px, transparent 6px 12px); }
+  /* ---- the top bar ----------------------------------------------------------
+     The one piece both modes share, which is what makes them one application.
+     Three zones: identity, the mode switch dead centre, and the mode's own
+     tools on the right. */
+  #topbar { height: 45px; flex: none; display: flex; align-items: center;
+            justify-content: space-between; gap: 10px; padding: 0 11px;
+            background: var(--sd-surface); border-bottom: 1px solid var(--sd-line);
+            position: relative; z-index: 30; }
+  #topbar .tb-side { display: flex; align-items: center; gap: 8px; flex: 1;
+            min-width: 0; }
+  #topbar .tb-side.right { justify-content: flex-end; }
+  #topbar .tb-brand { display: flex; align-items: center; gap: 8px;
+            font-size: 13px; font-weight: 600; letter-spacing: -.02em;
+            white-space: nowrap; }
+  #topbar .tb-brand svg { width: 17px; height: 17px; flex: none; }
+  #topbar .tb-sep { width: 1px; height: 17px; background: var(--sd-line);
+            margin: 0 4px; flex: none; }
 
-  #wordmark { padding: 10px 12px 0; font-size: 9px; letter-spacing: .24em;
-             color: var(--sd-dim); }
-  #toolbar.collapsed #wordmark { padding: 10px 0 0; text-align: center;
-             letter-spacing: .12em; }
+  /* The switch. The active segment is raised with its own surface and a 1px
+     border, never with colour — the green means only one thing in this app. */
+  #mode-switch { display: flex; gap: 2px; padding: 3px;
+            background: var(--sd-hover); border-radius: 999px; flex: none; }
+  #mode-switch button { display: flex; align-items: center; gap: 6px;
+            padding: 4px 12px; border: 1px solid transparent; border-radius: 999px;
+            background: none; color: var(--sd-dim); font: inherit; font-size: 12px;
+            font-weight: 500; cursor: pointer; position: relative; }
+  #mode-switch button:hover { color: var(--sd-ink); }
+  #mode-switch button.on { background: var(--sd-muted);
+            border-color: var(--sd-line); color: var(--sd-ink);
+            box-shadow: 0 1px 2px rgba(0,0,0,.4); }
+  #mode-switch button svg { width: 14px; height: 14px; flex: none; fill: none;
+            stroke: currentColor; stroke-width: 1.5; stroke-linecap: round;
+            stroke-linejoin: round; }
+  /* The agent moved while you were not looking. */
+  #mode-switch .fresh { width: 7px; height: 7px; border-radius: 50%;
+            background: var(--sd-drive); box-shadow: 0 0 8px var(--sd-drive); }
 
-  /* Labels collapse to nothing rather than disappearing, so the width animates
-     instead of the text snapping out of existence. */
-  #toolbar .lb { display: inline-block; opacity: 1; max-width: 158px;
-             margin-left: 10px; overflow: hidden; white-space: nowrap;
-             transition: opacity .16s .1s, max-width .26s, margin-left .26s; }
-  #toolbar.collapsed .lb { opacity: 0; max-width: 0; margin-left: 0;
-             transition: opacity .08s, max-width .26s, margin-left .26s; }
-  #toolbar.collapsed .x-only { display: none; }
-  .c-only { display: none; }
-  #toolbar.collapsed .c-only { display: flex; flex-direction: column;
-             align-items: center; gap: 8px; }
+  /* Presence: stacked avatars, then the control chip. Solid chip = you drive.
+     Shape carries the message beside colour, as the rail always did. */
+  #tb-presence { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .tb-avatars { display: flex; flex: none; }
+  .tb-avatars .av { width: 22px; height: 22px; border-radius: 50%;
+            border: 2px solid var(--sd-surface); font-size: 9px; font-weight: 600;
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; }
+  .tb-avatars .av + .av { margin-left: -6px; }
+  .tb-avatars .av.agent { background: linear-gradient(140deg,#2f7d5c,#3fd68c);
+            color: #06301c; }
+  #tb-control { display: flex; align-items: center; gap: 6px; padding: 4px 10px;
+            border: 1px solid transparent; border-radius: 999px;
+            background: var(--sd-drive); color: var(--sd-drive-ink);
+            font: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+            white-space: nowrap; flex: none; }
+  #tb-control svg { width: 13px; height: 13px; flex: none; fill: none;
+            stroke: currentColor; stroke-width: 2; stroke-linecap: round;
+            stroke-linejoin: round; }
+  /* Somebody else drives: hatched, bordered, amber — never solid. */
+  #tb-control.watching { background: repeating-linear-gradient(135deg,
+            rgba(242,179,61,.18) 0 5px, transparent 5px 10px);
+            border-color: var(--sd-watch); color: var(--sd-watch);
+            font-weight: 500; }
+  #tb-control.free { background: none; border-color: var(--sd-line);
+            color: var(--sd-ink); font-weight: 500; }
+  #tb-control.agent-drives { background: rgba(63,214,140,.12);
+            border-color: rgba(63,214,140,.4); color: var(--sd-drive);
+            font-weight: 500; }
 
-  .sd-sep { height: 1px; background: var(--sd-line-soft); margin: 0 10px; }
-  .sd-group { padding: 9px 12px 2px; font-size: 9.5px; letter-spacing: .16em;
-             text-transform: uppercase; color: var(--sd-dim); }
-  .sd-rows { padding: 2px 6px 4px; }
+  /* One tool: a 27px icon well. Live states borrow the old rail's language. */
+  .tb-tool { position: relative; display: flex; align-items: center;
+            justify-content: center; width: 27px; height: 27px; border: 0;
+            border-radius: var(--sd-r-md); background: none; color: var(--sd-dim);
+            cursor: pointer; flex: none; }
+  .tb-tool:hover { background: var(--sd-hover); color: var(--sd-ink); }
+  .tb-tool svg { width: 16px; height: 16px; fill: none; stroke: currentColor;
+            stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .tb-tool.on { background: var(--sd-muted); color: var(--sd-ink);
+            box-shadow: inset 0 0 0 1px var(--sd-line); }
+  .tb-tool.live { color: var(--sd-drive); }
+  .tb-tool.live-rec { color: var(--sd-rec); background: rgba(251,44,54,.12); }
+  .tb-tool[aria-disabled="true"] { opacity: .45; cursor: default; }
+  .tb-tool .badge { position: absolute; right: -2px; top: -2px; min-width: 13px;
+            height: 13px; padding: 0 3px; border-radius: 7px;
+            background: var(--sd-drive); color: var(--sd-drive-ink);
+            font-size: 8.5px; font-weight: 700; line-height: 13px;
+            text-align: center; }
+  .tb-clock { font-size: 11px; font-weight: 500; color: var(--sd-rec);
+            font-variant-numeric: tabular-nums; margin-right: 2px; flex: none; }
+  /* Quality: the one labelled control among the icons. */
+  #tb-quality { display: flex; align-items: center; gap: 6px; height: 27px;
+            padding: 0 9px; border: 1px solid var(--sd-line);
+            border-radius: var(--sd-r-md); background: none; color: var(--sd-dim);
+            font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap;
+            flex: none; }
+  #tb-quality:hover { color: var(--sd-ink); }
+  #tb-quality b { font-weight: 600; color: var(--sd-ink); }
+  #tb-quality svg { width: 12px; height: 12px; fill: none; stroke: currentColor;
+            stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  #tb-quality[aria-disabled="true"] { opacity: .45; cursor: default; }
+  /* The agent-mode right side: connection chip and you. */
+  .tb-chip { display: flex; align-items: center; gap: 6px; padding: 4px 9px;
+            border-radius: 999px; font-size: 11px; font-weight: 500;
+            white-space: nowrap; flex: none; }
+  .tb-chip .dot { width: 5px; height: 5px; border-radius: 50%; flex: none; }
+  .tb-chip.ok { background: rgba(63,214,140,.12); color: var(--sd-drive); }
+  .tb-chip.ok .dot { background: var(--sd-drive); box-shadow: 0 0 6px var(--sd-drive); }
+  .tb-chip.warn { background: rgba(242,179,61,.12); color: var(--sd-watch); }
+  .tb-chip.warn .dot { background: var(--sd-watch); }
+  .tb-chip.off { background: var(--sd-hover); color: var(--sd-dim); }
+  .tb-chip.off .dot { background: var(--sd-dim); }
+  .tb-you { width: 24px; height: 24px; border: 0; border-radius: 50%;
+            background: linear-gradient(140deg,#6d5bd0,#c2569c); color: #fff;
+            font: inherit; font-size: 10px; font-weight: 600; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            flex: none; }
 
-  #toolbar .row { width: 100%; display: flex; align-items: center;
-             justify-content: flex-start; padding: 7px 10px; border: 0;
-             border-radius: 7px; background: none; color: var(--sd-ink);
-             font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
-  #toolbar.collapsed .row { flex-direction: column; justify-content: center;
-             gap: 3px; padding: 9px 0; }
-  #toolbar .row:hover { background: var(--sd-hover); }
-  #toolbar .row:active { transform: translateY(1px); }
-  #toolbar .row .ic { display: flex; width: 20px; height: 20px; flex: none;
-             align-items: center; justify-content: center; opacity: .92; }
-  #toolbar .row svg { width: 17px; height: 17px; fill: none; stroke: currentColor;
-             stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-  #toolbar .row[aria-disabled="true"] { opacity: .45; cursor: not-allowed;
-             color: var(--sd-dim); }
-  #toolbar .row[aria-disabled="true"]:hover { background: none; }
+  /* ---- the desktop, mode one ------------------------------------------------
+     The video fills what the bar leaves. Nothing floats over it any more —
+     except the things that are alarms or answers (recording, watching,
+     dialogs), which keep their overlay nature on purpose. */
+  #stage-desktop { flex: 1; min-width: 0; position: relative;
+            background: var(--sd-bg); }
+  #screen { width: 100%; height: 100%; object-fit: contain; display: block;
+            background: #0b0f10; cursor: default; outline: none; }
+  #stage-desktop, #screen { touch-action: none; -webkit-user-select: none;
+            user-select: none; }
 
-  /* Active states tint their own row rather than inverting it: the rail stays
-     one surface and the live control is the only thing that glows. */
-  #btn-mic.live { color: var(--sd-drive);
-             background: color-mix(in srgb, var(--sd-drive) 10%, transparent); }
-  #btn-mic.live:hover { background: color-mix(in srgb, var(--sd-drive) 16%, transparent); }
-  #btn-mic.live .ic svg rect { fill: currentColor; }
-  .live-chip { font-size: 9px; font-weight: 700; letter-spacing: .1em;
-             padding: 2px 5px; border-radius: 4px; background: var(--sd-drive);
-             color: var(--sd-drive-ink); animation: sd-pulse 1.6s infinite; }
-  #btn-rec.live { color: var(--sd-rec);
-             background: color-mix(in srgb, var(--sd-rec) 13%, transparent); }
-  #btn-rec.live:hover { background: color-mix(in srgb, var(--sd-rec) 20%, transparent); }
-  #btn-rec.live .lb { font-weight: 700; }
-  #btn-rec.live .ring { animation: sd-pulse 1.2s infinite; }
-  #btn-rec .dot-in { fill: var(--sd-rec); stroke: none; }
-  #btn-rec .stop-in { display: none; fill: currentColor; stroke: none; }
-  #btn-rec.live .dot-in { display: none; }
-  #btn-rec.live .stop-in { display: block; }
-  #rec-mini { display: none; font-size: 9px; color: var(--sd-rec); }
-  #toolbar.collapsed #btn-rec.live #rec-mini { display: block; }
-  #btn-audio.muted { color: var(--sd-dim); }
-  #btn-audio.muted .lb { text-decoration: line-through; text-decoration-thickness: 1px; }
-  #btn-audio .spk-on { display: block; }
-  #btn-audio .spk-off { display: none; }
-  #btn-audio.muted .spk-on { display: none; }
-  #btn-audio.muted .spk-off { display: block; }
-  #btn-logout:hover { background: color-mix(in srgb, var(--sd-rec) 12%, transparent);
-             color: var(--sd-rec); }
-  #lang-code, #quality-code { font-size: 9px; padding: 1px 4px;
-             border: 1px solid var(--sd-line);
-             border-radius: 4px; color: var(--sd-dim); }
+  /* ---- the agent workspace stage -------------------------------------------
+     Mode two's canvas card: header strip, the same #screen, control strip. */
+  .stage-card { border: 1px solid var(--sd-line); border-radius: var(--sd-r-xl);
+            overflow: hidden; background: var(--sd-surface); }
+  .stage-head { display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+            border-bottom: 1px solid var(--sd-line-soft); font-size: 11px;
+            color: var(--sd-dim); }
+  .stage-head .dot { width: 5px; height: 5px; border-radius: 50%;
+            background: var(--sd-drive); box-shadow: 0 0 6px var(--sd-drive);
+            flex: none; }
+  .stage-head button { margin-left: auto; display: flex; align-items: center;
+            gap: 5px; padding: 3px 9px; border: 1px solid var(--sd-line);
+            border-radius: 999px; background: none; color: var(--sd-ink);
+            font: inherit; font-size: 11px; cursor: pointer; }
+  .stage-head button:hover { background: var(--sd-hover); }
+  .stage-head button svg { width: 12px; height: 12px; fill: none;
+            stroke: currentColor; stroke-width: 1.5; stroke-linecap: round;
+            stroke-linejoin: round; }
+  .stage-screen { position: relative; aspect-ratio: 16 / 10; background: #0b0f10;
+            min-height: 0; }
+  .stage-screen #screen { position: absolute; inset: 0; height: 100%; }
+  .stage-foot { display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+            border-top: 1px solid var(--sd-line-soft); background: var(--sd-hover);
+            font-size: 12px; color: var(--sd-dim); }
+  .stage-foot .who { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .stage-foot .who .dot { width: 6px; height: 6px; border-radius: 50%;
+            background: var(--sd-drive); box-shadow: 0 0 8px var(--sd-drive);
+            flex: none; }
+  .stage-foot .who.watch .dot { background: var(--sd-watch); box-shadow: none; }
+  .stage-foot button { margin-left: auto; padding: 4px 11px;
+            border: 1px solid var(--sd-line); border-radius: var(--sd-r-md);
+            background: none; color: var(--sd-ink); font: inherit;
+            font-size: 11px; font-weight: 500; cursor: pointer;
+            white-space: nowrap; }
+  .stage-foot button:hover { background: var(--sd-hover); }
+  .stage-foot button.take { background: var(--sd-ink); color: var(--sd-bg);
+            border-color: transparent; font-weight: 600; }
 
-  /* --- presence: the hero module --------------------------------------------
-     The most consequential thing on screen. Not knowing you are only watching
-     means pressing keys and having nothing happen, which reads as a broken
-     connection rather than as a rule. */
-  #presence { padding: 9px 12px 12px; }
-  #toolbar.collapsed #presence { display: none; }
-  #pres-head { display: flex; align-items: baseline; justify-content: space-between;
-             gap: 8px; }
-  #pres-head .k { font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase;
-             color: var(--sd-dim); }
-  #pres-count { font-size: 9.5px; letter-spacing: .06em; color: var(--sd-dim);
-             white-space: nowrap; }
-  #pres-chip { display: flex; align-items: center; gap: 8px; margin-top: 9px;
-             padding: 7px 9px; border-radius: 6px; font-size: 11px;
-             letter-spacing: .05em; text-transform: uppercase;
-             border: 1px solid var(--sd-line-soft); color: var(--sd-dim); }
-  #pres-chip svg { width: 15px; height: 15px; flex: none; fill: none;
-             stroke: currentColor; stroke-width: 1.8; stroke-linecap: round;
-             stroke-linejoin: round; }
-  #presence.you-control #pres-chip { border: 0; padding: 8px 10px; font-weight: 700;
-             letter-spacing: .06em; background: var(--sd-drive);
-             color: var(--sd-drive-ink);
-             box-shadow: 0 0 16px color-mix(in srgb, var(--sd-drive) 35%, transparent); }
-  /* An agent at the controls gets its own signature. Amber already means
-     "somebody else is driving"; violet says that somebody is not a person, and
-     the pointer moving by itself stops reading as a fault. */
-  #toolbar.agent-controls #rail-sig {
-             background: repeating-linear-gradient(180deg,
-                         #b08cf7 0 6px, transparent 6px 12px); }
-  #presence.watching.has-agent #pres-chip { border-color: #b08cf7;
-             color: #b08cf7;
-             background: repeating-linear-gradient(135deg,
-                         color-mix(in srgb, #b08cf7 15%, transparent) 0 5px,
-                         transparent 5px 11px); }
-  /* Nobody driving. Neither the solid green of "you are driving" nor the
-     hatched amber of "somebody else is": an outline says the seat is empty and
-     the shape stays distinct from both, so the three states are still told
-     apart without relying on colour. */
-  #presence.free #pres-chip { padding: 8px 10px; font-weight: 700;
-             letter-spacing: .06em; border: 1px dashed var(--sd-line);
-             color: var(--sd-dim); background: transparent; }
-  #toolbar.free #rail-sig {
-             background: repeating-linear-gradient(180deg,
-                         var(--sd-line) 0 4px, transparent 4px 10px); }
+  /* ---- toast ----------------------------------------------------------------
+     Base rule at last: the old sheet only ever sized it for phones. */
+  #toast { position: absolute; left: 50%; bottom: 24px;
+            transform: translateX(-50%); z-index: 70; padding: 9px 14px;
+            background: var(--sd-panel); border: 1px solid var(--sd-line);
+            border-radius: var(--sd-r-lg); color: var(--sd-ink); font-size: 12.5px;
+            box-shadow: 0 12px 32px rgba(0,0,0,.45);
+            animation: sd-rise .2s ease-out; max-width: min(520px, 92vw); }
+  #toast.err { border-color: var(--sd-bad); }
+  #toast b { color: var(--sd-drive); }
 
-  #presence.watching #pres-chip { padding: 8px 10px; font-weight: 700;
-             letter-spacing: .06em; border: 1px solid var(--sd-watch);
-             color: var(--sd-watch);
-             background: repeating-linear-gradient(135deg,
-                         color-mix(in srgb, var(--sd-watch) 15%, transparent) 0 5px,
-                         transparent 5px 11px); }
-  /* One icon per state; the others stay out of the flow entirely. */
-  #pres-chip .i-solo, #pres-chip .i-drive, #pres-chip .i-watch { display: none; }
-  #presence.solo #pres-chip .i-solo { display: block; }
-  #presence.you-control #pres-chip .i-drive { display: block; fill: currentColor;
-             stroke: none; }
-  #presence.watching #pres-chip .i-watch { display: block; }
+  /* ---- boot -----------------------------------------------------------------
+     The first frame anybody sees. Same engineering grid, neutral ground. */
+  #status { position: absolute; inset: 0; z-index: 20; display: flex;
+            flex-direction: column; align-items: center; justify-content: center;
+            gap: 20px; color: var(--sd-dim); background: var(--sd-bg);
+            transition: opacity .3s; font-variant-numeric: tabular-nums; }
+  #status.hidden { opacity: 0; pointer-events: none; }
+  #status::before, #login::before { content: ""; position: absolute; inset: 0;
+            pointer-events: none; opacity: .5;
+            background-image:
+              linear-gradient(rgba(130,170,255,.05) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(130,170,255,.05) 1px, transparent 1px);
+            background-size: 56px 56px, 56px 56px;
+            -webkit-mask-image: radial-gradient(closest-side at 50% 46%, #000, transparent);
+            mask-image: radial-gradient(closest-side at 50% 46%, #000, transparent); }
+  #status > * { position: relative; }
+  #status .brand { display: flex; align-items: center; gap: 10px;
+            font-size: 18px; font-weight: 600; letter-spacing: -.02em;
+            color: var(--sd-ink); }
+  #status .brand svg { width: 24px; height: 24px; flex: none; }
+  .brand-scr { fill: var(--sd-drive); }
+  .brand-gls { fill: var(--sd-bg); }
+  .brand-std { fill: #2aa96c; }
+  #status .scan { position: relative; width: 176px; height: 2px; overflow: hidden;
+            border-radius: 2px; background: var(--sd-line); }
+  #status .scan::after { content: ""; position: absolute; top: 0; bottom: 0;
+            width: 56px; border-radius: 2px; background: var(--sd-drive);
+            box-shadow: 0 0 10px var(--sd-drive);
+            animation: sd-scan 1.4s cubic-bezier(.45,0,.55,1) infinite alternate; }
+  @keyframes sd-scan { from { left: -8px } to { left: 128px } }
+  #status #status-text { font-family: var(--sd-mono); font-size: 12px;
+            letter-spacing: .04em; }
+  #status #status-text::after { content: "▍"; margin-left: 6px;
+            color: var(--sd-drive); animation: sd-blink 1.1s steps(2) infinite; }
+  @keyframes sd-blink { 50% { opacity: 0 } }
 
-  #btn-control { display: block; width: 100%; margin-top: 8px; padding: 8px 10px;
-             border: 0; border-radius: 6px; background: var(--sd-watch);
-             color: var(--sd-watch-ink); font: inherit; font-size: 11.5px;
-             font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
-             text-align: center; cursor: pointer; }
-  #btn-control:hover { filter: brightness(1.12); }
-  #btn-control:active { transform: translateY(1px); }
-  /* Handing control back is a real action people look for, not a footnote.
-     It used to be an underlined link and went unnoticed; it is a button now,
-     outlined rather than filled so it never competes with "Take control". */
-  #presence.you-control #btn-control { margin-top: 8px;
-             background: none; color: var(--sd-ink);
-             border: 1px solid var(--sd-line); }
-  #presence.you-control #btn-control:hover { background: var(--sd-hover);
-             filter: none; }
-  #btn-control[hidden] { display: none; }
-
-  /* The panic button. Only present when an agent is, because a stop control with
-     nothing to stop is noise — and worse, it teaches people to ignore it.
-
-     Styled apart from everything else on purpose: it is the one control here
-     whose job is to be found in a hurry by somebody who is alarmed. Filled red
-     rather than outlined, wider hit area than its neighbours, and no
-     confirmation step. A dialog asking "are you sure?" in front of a stop button
-     is a design that has misunderstood what the button is for. Undoing an
-     accidental press costs one click on "take control"; not being able to stop
-     an agent quickly costs whatever it was doing. */
-  #btn-abort { display: none; width: 100%; margin-top: 6px; padding: 9px 10px;
-             border: 0; border-radius: 6px; background: var(--sd-stop, #FF5F57);
-             color: #2a0b09; font: inherit; font-size: 11.5px; font-weight: 800;
-             letter-spacing: .06em; text-transform: uppercase;
-             text-align: center; cursor: pointer; }
-  #presence.has-agent #btn-abort { display: block; }
-
-  /* Hold sits ABOVE stop and is quieter than it. The ordering is deliberate:
-     the reversible action is the one to reach for first, and a red button
-     beside another red button makes neither of them mean anything. Outlined,
-     not filled — this is "wait a moment", not an emergency. */
-  #btn-pause { display: none; width: 100%; margin-top: 8px; padding: 8px 10px;
-             border: 1px solid var(--sd-line); border-radius: 6px;
-             background: none; color: var(--sd-ink); font: inherit;
-             font-size: 11.5px; font-weight: 700; letter-spacing: .05em;
-             text-transform: uppercase; text-align: center; cursor: pointer; }
-  #presence.has-agent #btn-pause { display: block; }
-  #btn-pause:hover { background: var(--sd-hover); }
-  /* Held: the button becomes the way out, and the module says so, because a
-     second person seeing the agent stopped with no explanation reaches for
-     stop — the destructive one this exists to avoid. */
-  #presence.held #btn-pause { background: var(--sd-watch);
-             color: var(--sd-watch-ink); border-color: transparent; }
-  #presence.held #pres-chip { outline: 1px dashed var(--sd-watch);
-             outline-offset: 3px; }
-
-  /* The credential warning. Bottom-centre rather than over the middle of the
-     screen: the person is probably using the desktop, and information they
-     cannot act on this second has no business covering their work. */
-  #notice { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px);
-             display: flex; align-items: flex-start; gap: 14px;
-             max-width: min(560px, calc(100vw - 32px)); padding: 14px 16px;
-             border-radius: 12px; border: 1px solid var(--sd-line);
-             background: var(--sd-panel, #14181c); color: var(--sd-ink);
-             box-shadow: 0 12px 34px rgba(0,0,0,.42);
-             opacity: 0; pointer-events: none; z-index: 60;
-             transition: opacity .18s ease, transform .18s ease; }
-  #notice.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
-  #notice.warn { border-color: var(--sd-stop, #FF5F57); }
-  #notice .nt-body { display: flex; gap: 12px; align-items: flex-start; }
-  #notice .nt-icon { flex: 0 0 auto; width: 20px; height: 20px; margin-top: 1px;
-             fill: none; stroke: var(--sd-stop, #FF5F57); stroke-width: 1.8;
-             stroke-linecap: round; stroke-linejoin: round; }
-  #notice .nt-text { margin: 0; font-size: 12.5px; line-height: 1.5;
-             white-space: pre-line; }
-  #notice #nt-ok { flex: 0 0 auto; align-self: center; padding: 7px 16px;
-             border: 0; border-radius: 7px; background: var(--sd-line);
-             color: var(--sd-ink); font: inherit; font-size: 11.5px;
-             font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
-             cursor: pointer; }
-  #notice #nt-ok:hover { filter: brightness(1.25); }
-  #btn-abort:hover { filter: brightness(1.1); }
-  #btn-abort:active { transform: translateY(1px); }
-  /* Confirmation is the button itself changing, briefly. Nothing modal: the
-     person who pressed this is already looking at the screen, and the terminal
-     they are watching is about to say so too. */
-  #btn-abort.done { background: var(--sd-line); color: var(--sd-dim);
-             pointer-events: none; }
-
-  /* Collapsed presence: a ring carrying the count, its stroke telling the state
-     — solid for driving, dashed for watching. */
-  #pres-mini { padding: 8px 0 10px; }
-  #pres-ring { display: flex; align-items: center; justify-content: center;
-             width: 26px; height: 26px; border-radius: 50%;
-             border: 1.5px solid var(--sd-line); color: var(--sd-dim);
-             font-size: 11px; font-weight: 700; }
-  #toolbar.you-control #pres-ring { border: 2px solid var(--sd-drive);
-             color: var(--sd-drive);
-             box-shadow: 0 0 10px color-mix(in srgb, var(--sd-drive) 45%, transparent); }
-  #toolbar.watching #pres-ring { border: 2px dashed var(--sd-watch);
-             color: var(--sd-watch); }
-  #pres-ring svg { width: 13px; height: 13px; fill: none; stroke: currentColor;
-             stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  #toolbar.you-control #pres-ring svg, #toolbar.watching #pres-ring svg { display: none; }
-  #toolbar:not(.watching) #btn-control-mini { display: none; }
-  #btn-control-mini { display: flex; align-items: center; justify-content: center;
-             width: 30px; height: 30px; border: 0; border-radius: 7px;
-             background: var(--sd-watch); color: var(--sd-watch-ink); cursor: pointer; }
-  #btn-control-mini:hover { filter: brightness(1.12); }
-  #btn-control-mini svg { width: 15px; height: 15px; fill: currentColor; stroke: none; }
-
-  /* --- foot: collapse and hide ---------------------------------------------- */
-  #rail-foot { display: flex; justify-content: space-between; gap: 4px; padding: 6px; }
-  #toolbar.collapsed #rail-foot { flex-direction: column; align-items: center; }
-  #rail-foot button { display: flex; align-items: center; justify-content: center;
-             width: 30px; height: 26px; border: 0; border-radius: 6px;
-             background: none; color: var(--sd-dim); font: inherit; font-size: 12px;
-             line-height: 1; cursor: pointer; }
-  #rail-foot button:hover { background: var(--sd-hover); color: var(--sd-ink); }
-  #toolbar-hide { border: 1px solid var(--sd-line-soft) !important; }
-  #toolbar-collapse svg { width: 15px; height: 15px; fill: none; stroke: currentColor;
-             stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  #toolbar .chev-in { display: none; }
-  #toolbar.collapsed .chev-in { display: block; }
-  #toolbar.collapsed .chev-out { display: none; }
+  /* ---- login ----------------------------------------------------------------
+     The console door: no photograph, nothing to wait for. The grid is the
+     boot screen's own — the two are the same surface a second apart. */
+  #login { position: absolute; inset: 0; z-index: 20; display: none;
+            background: var(--sd-bg);
+            color: var(--sd-ink); }
+  #login.visible { display: block; }
+  #login form { position: relative; width: min(360px, calc(100% - 48px));
+            margin: 0 auto; height: 100%; display: flex; flex-direction: column;
+            justify-content: center; gap: 13px; }
+  #login h1 { display: flex; flex-direction: column; align-items: center;
+            gap: 13px; font-size: 19px; font-weight: 600; letter-spacing: -.02em;
+            margin-bottom: 2px; }
+  #login h1 svg { width: 34px; height: 34px; }
+  #login .subtitle { font-size: 13.5px; line-height: 1.5; color: var(--sd-dim);
+            text-align: center; margin-bottom: 12px; }
+  #login label { font-size: 11px; font-weight: 500; color: var(--sd-dim); }
+  #login input { width: 100%; margin-top: -7px; height: 40px; padding: 0 12px;
+            background: var(--sd-surface); border: 1px solid var(--sd-line);
+            border-radius: var(--sd-r-lg); color: var(--sd-ink); font: inherit;
+            font-size: 14px; }
+  #login input:focus { outline: none; border-color: var(--sd-focus);
+            box-shadow: 0 0 0 3px rgba(111,217,255,.18); }
+  #login button, #status #login-btn { height: 40px; padding: 0 12px; border: 0;
+            border-radius: var(--sd-r-lg); background: var(--sd-ink);
+            color: var(--sd-bg); font: inherit; font-size: 14px; font-weight: 600;
+            cursor: pointer; }
+  #login button:hover, #status #login-btn:hover { filter: brightness(.92); }
+  #login button:active { transform: translateY(1px); }
+  #login button:disabled { opacity: .5; cursor: wait; }
+  /* The error is a strip with its own ground, not a loose line. */
+  #login .error { display: none; align-items: center; gap: 8px;
+            padding: 8px 10px; border-radius: var(--sd-r-md);
+            background: rgba(229,72,77,.12); border: 1px solid rgba(229,72,77,.28);
+            font-size: 12.5px; color: var(--sd-bad-ink); }
+  #login .error.show { display: flex; }
+  #login .error svg { width: 14px; height: 14px; flex: none; fill: none;
+            stroke: currentColor; stroke-width: 1.5; stroke-linecap: round;
+            stroke-linejoin: round; }
+  #login .foot { position: absolute; left: 0; right: 0; bottom: 0;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 20px 26px; font-size: 11px; color: var(--sd-faint); }
+  #login .foot button { all: unset; display: flex; align-items: center; gap: 6px;
+            font-size: 11px; color: var(--sd-faint); cursor: pointer; }
+  #login .foot button:hover { color: var(--sd-ink); }
+  #login .foot svg { width: 13px; height: 13px; fill: none; stroke: currentColor;
+            stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
   /* --- the watching notice --------------------------------------------------
      The action sits inside the notice: the message and the way to act on it are
@@ -619,19 +506,6 @@
 
   /* The whisker: what is left when the rail is hidden. Barely there until the
      pointer finds it, so the shortcut is not the only way back. */
-  #toolbar-handle { position: absolute; left: 0; top: 50%;
-             transform: translateY(-50%); z-index: 9;
-             display: flex; flex-direction: column; align-items: center;
-             justify-content: center; gap: 4px; width: 20px; height: 76px;
-             cursor: pointer; background: var(--sd-surface);
-             border: 1px solid var(--sd-line); border-left: 0;
-             border-radius: 0 9px 9px 0; color: var(--sd-dim); font-size: 11px;
-             font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-             opacity: .16; transition: opacity .2s, color .2s;
-             backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-  #toolbar-handle:hover { opacity: 1; color: var(--sd-ink); }
-  #toolbar-handle svg { width: 12px; height: 12px; fill: none; stroke: currentColor;
-             stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
   /* Which microphone to share. With several plugged in, the first one the
      browser offers is rarely the right one, so choosing is the whole point. */
@@ -677,138 +551,6 @@
   #stats polyline { fill: none; stroke: var(--sd-drive); stroke-width: 1.5;
            stroke-linejoin: round; }
 
-  /* --- login -----------------------------------------------------------------
-     The door, and the only screen a person meets before the desktop itself, so
-     it carries the whole idea in one frame: the wallpaper runs nearly full
-     colour across the width, and the form sits in a column of dark glass along
-     the left edge with the phosphor strip on its border — the same green that
-     means "you are driving" once you are inside.
-
-     The form is a full-height column rather than a floating card because the
-     wallpaper is the subject here; a centred card would have cut a hole in it. */
-  #login { position: absolute; inset: 0; display: none; align-items: stretch;
-           justify-content: flex-start; z-index: 20; overflow: hidden;
-           background: #05070D;
-           font-family: 'Archivo', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  /* The whole screen wears the wallpaper, blurred, behind BOTH panes — a
-     photo/video backdrop the form and the art both float on. Darkened so the
-     form's text stays legible; scaled up a touch so the blur has no soft edge
-     at the frame. */
-  #login::before { content: ""; position: absolute; inset: 0; pointer-events: none;
-           background-image: var(--login-art, url('/desktop-wallpaper.webp'));
-           background-position: center; background-size: cover;
-           background-repeat: no-repeat;
-           filter: blur(30px) saturate(1.1) brightness(.5);
-           transform: scale(1.14); }
-  /* The picture, crisp and whole, floating on the full-screen blurred ground:
-     a real <img> so its OWN four corners round. The frame shrink-wraps it so
-     the neon ring below can trace the photo's exact edge. */
-  /* A little breathing room so the image never touches the pane edges and the
-     neon ring has somewhere to glow — small, scaling with the viewport, far
-     less than the old fixed 40px so the picture still fills a big monitor. */
-  #login-art { flex: 1; position: relative; z-index: 1; display: flex;
-           align-items: center; justify-content: center;
-           padding: clamp(20px, 2.4vw, 40px); }
-  .login-frame { position: relative; border-radius: 18px; }
-  /* Fills the pane on a wide monitor (max-width 100%), height-bound on a tall
-     one — either way the whole picture shows, never cropped. */
-  .login-frame img { display: block; max-width: 100%; max-height: 86vh;
-           object-fit: contain; border-radius: 18px;
-           box-shadow: 0 22px 70px rgba(0,0,0,.6); }
-  /* The neon: one soft phosphor arc that travels the whole border, slowly. It
-     sits just behind the photo, a single narrow highlight riding a steady dim
-     ring so the edge is always faintly lit and one brighter point drifts
-     around it. Kept close to the edge (small inset, gentle blur) so it hugs
-     the border instead of blooming into a blob off the corner. */
-  @property --neon-angle { syntax: '<angle>'; inherits: false; initial-value: 0turn; }
-  .login-frame::before { content: ""; position: absolute; inset: -2px; z-index: -1;
-           border-radius: 20px;
-           background: conic-gradient(from var(--neon-angle),
-             rgba(63,214,140,.18) 0turn,
-             rgba(63,214,140,.18) .40turn,
-             rgba(120,240,180,.85) .50turn,
-             rgba(63,214,140,.18) .60turn,
-             rgba(63,214,140,.18) 1turn);
-           filter: blur(3px);
-           animation: neon-travel 9s linear infinite; }
-  .login-frame::after { content: ""; position: absolute; inset: 0;
-           border-radius: 18px; pointer-events: none;
-           box-shadow: inset 0 0 0 1px rgba(63,214,140,.45),
-                       0 0 14px rgba(63,214,140,.20); }
-  @keyframes neon-travel { to { --neon-angle: 1turn; } }
-  @media (prefers-reduced-motion: reduce) {
-    .login-frame::before { animation: none; }
-  }
-  @media (max-width: 700px) { #login-art { display: none; } }
-  #login.visible { display: flex; }
-
-  /* The grid overlay is declared once with #status::before, up in the status
-     block — same surface, seen a moment apart. */
-
-  /* The form is frosted glass over the full-screen blurred wallpaper — a
-     translucent dark panel with its own blur, so the photo behind reads as a
-     mirror-like sheen under the fields ("medio espejo") rather than a busy
-     background fighting the text. */
-  #login form { box-sizing: border-box; position: relative; z-index: 1;
-           width: min(400px, 100%); padding: 48px 44px; display: flex;
-           flex-direction: column; justify-content: center; gap: 13px;
-           background: rgba(5,7,13,.60);
-           backdrop-filter: blur(16px) saturate(1.15);
-           -webkit-backdrop-filter: blur(16px) saturate(1.15);
-           border-right: 1px solid rgba(130,170,255,.16);
-           box-shadow: 24px 0 80px rgba(0,0,0,.45); }
-  /* The grid stays, but as an AREA that fades into the frosted glass rather
-     than a hard sheet reaching every edge: low-contrast lines under a radial
-     mask, so it blends with the wallpaper behind instead of sitting on top of
-     it. The ::before below is the phosphor accent strip; this is ::after. */
-  #login form::after { content: ""; position: absolute; inset: 0; z-index: -1;
-           pointer-events: none;
-           background-image:
-             linear-gradient(rgba(150,185,255,.06) 1px, transparent 1px),
-             linear-gradient(90deg, rgba(150,185,255,.06) 1px, transparent 1px);
-           background-size: 44px 44px, 44px 44px;
-           /* The grid RADIATES from the centre and dissolves outward — densest
-              in the middle, softly lost toward every edge, never a uniform
-              sheet. The long, uneven stops are the point: it should trail off
-              rather than stop on a line, so it reads as an echo on the glass,
-              not graph paper. */
-           -webkit-mask-image:
-             radial-gradient(ellipse 56% 34% at 50% 50%,
-               #000 0%, rgba(0,0,0,.72) 34%, rgba(0,0,0,.28) 62%, transparent 90%);
-           mask-image:
-             radial-gradient(ellipse 56% 34% at 50% 50%,
-               #000 0%, rgba(0,0,0,.72) 34%, rgba(0,0,0,.28) 62%, transparent 90%); }
-  #login form::before { content: ""; position: absolute; left: 0; top: 0;
-           bottom: 0; width: 3px; background: #3FD68C;
-           box-shadow: 0 0 12px #3FD68C; }
-  #login h1 { display: flex; align-items: center; gap: 10px; font-size: 19px;
-           font-weight: 700; font-stretch: 112%; letter-spacing: -.005em;
-           color: #E7EDEA; }
-  #login h1 svg { width: 24px; height: 24px; flex: none;
-           filter: drop-shadow(0 0 6px rgba(63,214,140,.55)); }
-  #login h1 .scr { fill: #3FD68C; }
-  #login h1 .gls { fill: #0b0e14; }
-  #login h1 .std { fill: #2AA96C; }
-  #login .subtitle { font-size: 13px; line-height: 1.55; color: #93A09A;
-           margin: -4px 0 14px; }
-  #login label { font-size: 10px; color: #93A09A; font-weight: 700;
-           letter-spacing: .14em; text-transform: uppercase; }
-  #login input { width: 100%; margin-top: -8px; padding: 11px 13px;
-           font: inherit; font-size: 14px; color: #E7EDEA;
-           background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.16);
-           border-radius: 6px; outline: none;
-           transition: border-color .15s, box-shadow .15s; }
-  #login input:focus { border-color: #6FD9FF;
-           box-shadow: 0 0 0 3px rgba(111,217,255,.16); }
-  #login button { padding: 12px; margin-top: 2px; border: 0; border-radius: 6px;
-           background: #3FD68C; color: #052B17; font: inherit; font-size: 14px;
-           font-weight: 700; font-stretch: 105%; letter-spacing: .01em;
-           cursor: pointer; transition: filter .15s, transform .05s;
-           box-shadow: 0 0 22px rgba(63,214,140,.35); }
-  #login button:hover { filter: brightness(1.1); }
-  #login button:active { transform: translateY(1px); }
-  #login button:disabled { opacity: .5; cursor: wait; filter: none; }
-  #login .error { color: #FF5D55; font-size: 12px; min-height: 16px; }
 
   /* --- dropping files onto the page ------------------------------------------
      Dragging a file from your own desktop onto the remote one is the gesture
@@ -1101,7 +843,6 @@
 
 /* Small screens: the rail starts collapsed-sized targets, the overlays fit. */
 @media (max-width: 760px) {
-  #toolbar { max-height: calc(100vh - 20px); overflow-y: auto; }
   #watching { left: 50%; transform: translateX(-50%); width: calc(100vw - 24px);
         max-width: 460px; }
   #stats { left: 8px; bottom: 8px; }
@@ -1115,16 +856,10 @@
    with the scrollbar deliberately hidden, which read as items missing rather
    than as a scroll. Tighter rows keep every icon on screen where the original
    spacing kept the original set; the rail still scrolls as a last resort. */
-#toolbar.collapsed .row { padding: 5px 0; gap: 0; }
 /* The hidden label still occupied its line height: max-width collapses a row
    layout, but the collapsed rail stacks icon over label, so the vertical axis
    needs its own zero. Without this every icon dragged ~14px of invisible text
    below it — the difference between a rail that fits and one that scrolls. */
-#toolbar.collapsed .lb { max-height: 0; }
-#toolbar.collapsed .sd-rows { padding: 2px 4px 2px; }
-#toolbar.collapsed .sd-group { padding: 4px 0 0; }
-#toolbar.collapsed #wordmark { padding: 8px 0 0; }
-#toolbar.collapsed #rail-foot { padding: 4px 0 6px; }
 
 /* --- the on-screen keyboard (new since the React client) ---------------------
    A full board docked at the bottom, styled after the key-rollover tester the
@@ -1197,42 +932,3 @@
   #kbd-deck { height: min(30vh, 260px); }
 }
 
-/* --- the agent's button on the rail ----------------------------------------
-   Round and accented, because it is the only control on the rail that changes
-   what the window is FOR: the rest adjust the desktop, this one puts a
-   conversation beside it. Everything else here is the .row it already is, so
-   collapsing the rail keeps working without a second set of rules. */
-#btn-ai .ic { position: relative; }
-#btn-ai .ic svg { stroke-width: 1.6; }
-#btn-ai::before {
-  content: ''; position: absolute; left: 6px; top: 50%;
-  width: 26px; height: 26px; margin-top: -13px; border-radius: 50%;
-  background: color-mix(in srgb, var(--sd-drive) 16%, transparent);
-  border: 1px solid color-mix(in srgb, var(--sd-drive) 42%, transparent);
-  transition: background .15s;
-}
-#toolbar.collapsed #btn-ai::before { left: 50%; margin-left: -13px; top: 7px; margin-top: 0; }
-#btn-ai:hover::before { background: color-mix(in srgb, var(--sd-drive) 26%, transparent); }
-#btn-ai.on::before { background: var(--sd-drive); border-color: var(--sd-drive); }
-#btn-ai.on .ic { color: var(--sd-drive-ink); }
-
-/* Whether there is anything to talk to, on the button itself. A control that
-   opens onto "not available" should have said so before it was pressed. */
-#btn-ai .ai-dot {
-  position: absolute; right: -5px; bottom: -2px;
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--sd-dim);
-  box-shadow: 0 0 0 2px var(--sd-surface);
-}
-#btn-ai .ai-dot.ready { background: var(--sd-drive); }
-#btn-ai .ai-dot.half { background: var(--sd-watch); }
-
-/* On a phone the split would leave two unusable columns, so the panel takes
-   the screen and the desktop waits behind it. */
-@media (max-width: 640px) {
-  /* !important because the drag handle writes --chat-w as an inline style on
-     body, and an inline value beats a stylesheet rule however specific. A
-     width dragged out on a monitor must not follow the session onto a phone,
-     where the panel is meant to take the whole screen. */
-  body.chat-open { --chat-w: 100vw !important; }
-}

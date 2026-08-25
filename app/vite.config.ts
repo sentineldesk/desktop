@@ -10,6 +10,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+import path from 'node:path'
+
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
@@ -17,7 +20,10 @@ import { defineConfig } from 'vite'
 // image's node stage) produce internal/webui/assets, and the binary carries
 // the result. One artifact, no copy step to forget.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: { '@': path.resolve(import.meta.dirname, 'src') },
+  },
   build: {
     outDir: '../internal/webui/assets',
     emptyOutDir: true,

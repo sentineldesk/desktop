@@ -1,0 +1,1099 @@
+// SentinelDesk
+// A collaborative operating system for people and AI agents.
+//
+// Copyright 2026 Federico Pereira <fpereira@cnsoluciones.com>
+//
+// Licensed under the Apache License, Version 2.0.
+//
+// This product's name and logo are trademarks of Federico Pereira and are not
+// covered by the license above. See the README for the trademark policy.
+//
+// SPDX-License-Identifier: Apache-2.0
+
+/* Mode two of the shell: the agent, full screen.
+ *
+ * The anatomy is OpenBot's app shell — a sessions sidebar with the user's
+ * menu rising from its foot, the conversation filling the centre, the
+ * desktop as a card the reader can expand — built from OpenBot's own vendored
+ * components (Message/Bubble, MessageScroller, ToolLine, Streamdown prose,
+ * the dropdown and dialog primitives). What is OURS is the data plane: every
+ * byte arrives on the WebRTC DataChannel this session already holds
+ * (useDesktopStream → agentChat), because the desktop deliberately has no
+ * HTTP endpoints to poll. OpenBot polls screenshots; we place the live
+ * <video> element into the card instead.
+ *
+ * The third column is the terminal's /panel (ctrl+b there, ctrl+b here): the
+ * session's state and totals, and the session verbs — compact, rewind,
+ * memory — that the TUI has and the old side panel never grew. They travel
+ * as the same slash commands the runtime announced on the wire.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import {
+  IconArrowRight,
+  IconBox,
+  IconChevronUp,
+  IconDeviceDesktop,
+  IconDots,
+  IconDownload,
+  IconArrowsDiagonal,
+  IconExternalLink,
+  IconLanguage,
+  IconLogout,
+  IconMoon,
+  IconPlayerStopFilled,
+  IconPlus,
+  IconSearch,
+  IconSettings,
+  IconSun,
+  IconTerminal2,
+  IconTrash,
+  IconX,
+} from '@tabler/icons-react'
+import { Streamdown } from 'streamdown'
+
+import { markdownComponents } from '@/lib/markdown'
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from '@/components/ui/input-group'
+import {
+  Bubble,
+  BubbleContent,
+} from '@/components/ui/bubble'
+import {
+  Message as MessageRow,
+  MessageContent,
+  MessageFooter,
+} from '@/components/ui/message'
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from '@/components/ui/message-scroller'
+import { ToolLine } from '@/components/channels/tool-line'
+
+import i18n, { LANGUAGES, setLanguage } from '../i18n'
+import type { AgentMessage, AgentSession } from '../transport/agentChat'
+import type { useDesktopStream } from '../transport/useDesktopStream'
+import { Console, Gate, statusLine, Thinking, when } from '../transport/chatParts'
+
+const DOCS_URL = 'https://sentineldesk.github.io/desktop/docs/guide/index.html'
+
+/* The panel's posture, remembered like the old rail's was. */
+const PANEL_KEY = 'sentineldesk.sessionPanel'
+/* The stage's posture: the desktop card starts open — watching the agent work
+ * is the point of the card — and remembers being folded. */
+const STAGE_KEY = 'sentineldesk.stage'
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).slice(0, 2)
+  return parts.map((p) => p[0]?.toUpperCase() ?? '').join('') || '?'
+}
+
+/* ---- one message, in OpenBot's dress -------------------------------------- */
+
+/* A person's line is a muted bubble on the right; the agent's prose is
+ * full-width markdown (Streamdown, links hardened in lib/markdown); a system
+ * line sits centred and small. The steps keep ToolLine's single-line action
+ * rhythm, shimmering while they run. */
+function Row({ m, since }: { m: AgentMessage; since: number }) {
+  const { t } = useTranslation()
+  if (m.role === 'human') {
+    return (
+      <MessageRow align="end">
+        <MessageContent>
+          <Bubble variant="muted" align="end">
+            <BubbleContent>
+              <span className="whitespace-pre-wrap">{m.text}</span>
+            </BubbleContent>
+          </Bubble>
+        </MessageContent>
+      </MessageRow>
+    )
+  }
+  if (m.role === 'system') {
+    return (
+      <div className="py-1 text-center text-xs text-muted-foreground">{m.text}</div>
+    )
+  }
+  return (
+    <MessageRow>
+      <MessageContent>
+        {m.steps.length > 0 ? (
+          <div className="min-w-0">
+            {m.steps.map((step) => (
+              <ToolLine
+                key={step.key}
+                label={step.tool}
+                {...(step.detail ? { detail: step.detail } : {})}
+                running={m.streaming && step.key === m.steps[m.steps.length - 1].key && m.text === ''}
+                failed={step.tool === 'interrupted'}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {m.text !== '' ? (
+          <div className="prose-sm min-w-0 max-w-full text-sm leading-relaxed">
+            <Streamdown components={markdownComponents}>{m.text}</Streamdown>
+          </div>
+        ) : null}
+
+        {m.streaming && m.text === '' && m.steps.length === 0 ? (
+          <Thinking since={since} />
+        ) : null}
+
+        {m.ending ? (
+          <MessageFooter
+            className={cn(
+              'gap-2 px-0',
+              !m.ending.ok
+                ? 'text-destructive'
+                : m.ending.stoppedBy
+                  ? 'text-amber-600 dark:text-amber-500'
+                  : '',
+            )}
+          >
+            {m.ending.stoppedBy ? (
+              <span>{t('chat.stoppedBy', { why: m.ending.stoppedBy })}</span>
+            ) : null}
+            {m.ending.turns ? <span>{t('chat.turns', { n: m.ending.turns })}</span> : null}
+            {m.ending.calls ? <span>{t('chat.calls', { n: m.ending.calls })}</span> : null}
+            {m.ending.inToks || m.ending.outToks ? (
+              <span>{t('chat.tokens', { n: m.ending.inToks + m.ending.outToks })}</span>
+            ) : null}
+          </MessageFooter>
+        ) : null}
+      </MessageContent>
+    </MessageRow>
+  )
+}
+
+/* ---- one session row ------------------------------------------------------ */
+
+/* OpenBot's roster row, re-pointed: no router, no react-query — opening is a
+ * DataChannel ask and the row menu carries the drawer's old verbs. */
+function SessionRow(props: {
+  session: AgentSession
+  on: boolean
+  onOpen(): void
+  onResume(): void
+  onExport(): void
+  onForget(): void
+}) {
+  const { t } = useTranslation()
+  const s = props.session
+  return (
+    <div
+      className={cn(
+        'group/row relative flex w-full min-w-0 items-start gap-2 rounded-lg px-2 py-2 text-left hover:bg-foreground/5',
+        props.on && 'bg-foreground/5',
+      )}
+    >
+      <button
+        type="button"
+        onClick={props.onOpen}
+        className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
+      >
+        <span className="flex min-w-0 items-baseline justify-between gap-2">
+          <span className="truncate text-[13px] font-medium">
+            {s.title || t('chat.emptyTitle')}
+          </span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            {when(s.at)}
+          </span>
+        </span>
+        <span className="truncate text-[11px] text-muted-foreground">
+          {t('chat.turns', { n: s.turns })}
+          {s.live ? ` · ${t('chat.thisOne')}` : ''}
+        </span>
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              className="absolute top-1.5 right-1.5 opacity-0 group-hover/row:opacity-100 aria-expanded:opacity-100"
+            />
+          }
+        >
+          <IconDots />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="p-1.5">
+          {!s.live ? (
+            <DropdownMenuItem className="gap-2 px-2 py-1.5" onClick={props.onResume}>
+              <IconArrowRight />
+              {t('chat.continueOne')}
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem className="gap-2 px-2 py-1.5" onClick={props.onExport}>
+            <IconDownload />
+            {t('chat.export')}
+          </DropdownMenuItem>
+          {!s.live ? (
+            <DropdownMenuItem
+              className="gap-2 px-2 py-1.5"
+              variant="destructive"
+              onClick={props.onForget}
+            >
+              <IconTrash />
+              {t('chat.forgetOne')}
+            </DropdownMenuItem>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  )
+}
+
+/* ---- the workspace -------------------------------------------------------- */
+
+export function AgentWorkspace(props: {
+  desktop: ReturnType<typeof useDesktopStream>
+  /* The live desktop, as an element this component only PLACES. The stream,
+   * the input pipe and the cursor all stay the shell's business. */
+  screen: React.ReactNode
+  name: string
+  expanded: boolean
+  onExpand(v: boolean): void
+  onSettings(): void
+  onLogout?: (() => void) | undefined
+}) {
+  const { t } = useTranslation()
+  const d = props.desktop
+  const chat = d.chat
+  const term = d.console
+  const { agent } = chat
+
+  const [draft, setDraft] = useState('')
+  const [search, setSearch] = useState('')
+  const [picker, setPicker] = useState(false)
+  const [wipe, setWipe] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [commandsOpen, setCommandsOpen] = useState(false)
+  const [userOpen, setUserOpen] = useState(false)
+  const [langOpen, setLangOpen] = useState(false)
+  const [panelOpen, setPanelOpen] = useState(
+    () => localStorage.getItem(PANEL_KEY) !== 'shut',
+  )
+  const [stageOpen, setStageOpen] = useState(
+    () => localStorage.getItem(STAGE_KEY) !== 'shut',
+  )
+  useEffect(() => {
+    localStorage.setItem(PANEL_KEY, panelOpen ? 'open' : 'shut')
+  }, [panelOpen])
+  useEffect(() => {
+    localStorage.setItem(STAGE_KEY, stageOpen ? 'open' : 'shut')
+  }, [stageOpen])
+
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  /* ctrl+b, exactly the terminal's key for the same panel. */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'b' && e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        setPanelOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  /* The roster loads when the sidebar appears, and refreshes when a run ends
+   * — a finished exchange is what changes it. */
+  const busy = chat.busy !== ''
+  useEffect(() => {
+    chat.loadSessions()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy])
+
+  /* The composer grows with the text, up to the cap below. Measured rather
+   * than counted in rows, because a pasted paragraph and five short lines are
+   * the same height and different row counts. */
+  const grow = useCallback(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`
+  }, [])
+  useEffect(grow, [draft, grow])
+
+  const past = chat.viewing !== 0
+  const canType = agent.ready && !past
+
+  const submit = useCallback(() => {
+    const body = draft.trim()
+    if (!body || !agent.ready) return
+    /* `/model` with nothing after it is a question, not a command — answered
+     * with the list rather than sent to a runtime that can only say no model
+     * was named. */
+    if (body === '/model') {
+      setPicker(true)
+      setDraft('')
+      return
+    }
+    /* `/connect` opens the TERMINAL. The flow is a conversation — a link, a
+     * sign-in, a code to bring back — and the agent's own view already runs
+     * the whole of it. The runtime would refuse the command from here anyway:
+     * it is marked local and never announced to browsers. */
+    if (body === '/connect' || body.startsWith('/connect ')) {
+      term.start()
+      setDraft('')
+      return
+    }
+    chat.ask(body)
+    setDraft('')
+    const el = inputRef.current
+    if (el) el.style.height = 'auto'
+  }, [draft, agent.ready, chat, term])
+
+  /* Only while the VERB is being typed: once there is a space the person is
+   * writing an argument, and a list hovering over their sentence is noise. */
+  const palette = (() => {
+    const typed = draft.trim()
+    if (!typed.startsWith('/') || typed.includes(' ')) return []
+    return chat.commands.filter((c) => c.name.startsWith(typed))
+  })()
+
+  const copyRemedy = useCallback(() => {
+    if (!agent.remedy) return
+    void navigator.clipboard
+      ?.writeText(agent.remedy)
+      .then(() => {
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 1600)
+      })
+      .catch(() => {})
+  }, [agent.remedy])
+
+  const sessions = useMemo(() => {
+    const needle = search.trim().toLowerCase()
+    if (!needle) return chat.sessions
+    return chat.sessions.filter((s) => s.title.toLowerCase().includes(needle))
+  }, [chat.sessions, search])
+
+  /* The session's totals, accumulated from every ending on screen — the same
+   * numbers the terminal's sidebar shows, from the wire this face gets. */
+  const totals = useMemo(() => {
+    let turns = 0
+    let calls = 0
+    let toks = 0
+    for (const m of chat.messages) {
+      if (m.ending) {
+        turns += m.ending.turns
+        calls += m.ending.calls
+        toks += m.ending.inToks + m.ending.outToks
+      }
+    }
+    return { turns, calls, toks }
+  }, [chat.messages])
+
+  const yours = d.control.yours
+  const holder = d.control.holder
+  const agentDrives = !yours && !!holder && d.control.holderIsAgent
+
+  /* ---- expanded: the desktop borrowed, the conversation as a strip ------- */
+  if (props.expanded) {
+    const lastAgent = [...chat.messages].reverse().find((m) => m.role === 'agent' && m.text)
+    return (
+      <div className="relative flex min-h-0 min-w-0 flex-1">
+        <div className="absolute inset-0">{props.screen}</div>
+
+        <button
+          type="button"
+          onClick={() => props.onExpand(false)}
+          className="absolute top-3 left-3.5 z-20 flex items-center gap-1.5 rounded-full border bg-background/80 py-1 pr-3 pl-2 text-xs backdrop-blur hover:bg-popover"
+        >
+          <IconX className="size-3.5 text-muted-foreground" />
+          <span className="text-muted-foreground">{t('ws.backTo')}</span>
+          <span className="font-medium">
+            {chat.sessions.find((s) => s.live)?.title || t('chat.title')}
+          </span>
+        </button>
+
+        <div className="absolute bottom-4 left-1/2 z-20 flex w-[min(620px,calc(100%-32px))] -translate-x-1/2 flex-col gap-2">
+          {lastAgent ? (
+            <div className="max-h-28 overflow-y-auto rounded-2xl border bg-background/85 px-3.5 py-2 text-[12.5px] leading-relaxed shadow-lg backdrop-blur">
+              {lastAgent.text}
+            </div>
+          ) : null}
+          <div className="flex items-center gap-2 rounded-full border bg-background/85 py-1.5 pr-1.5 pl-3.5 shadow-lg backdrop-blur">
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  submit()
+                }
+                e.stopPropagation()
+              }}
+              onKeyUp={(e) => e.stopPropagation()}
+              disabled={!canType}
+              placeholder={t('ws.keepTalking')}
+              className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
+            />
+            {busy ? (
+              <Button size="icon-sm" variant="outline" className="rounded-full" onClick={chat.stop} title={t('chat.stop')}>
+                <IconPlayerStopFilled className="size-3" />
+              </Button>
+            ) : (
+              <Button
+                size="icon-sm"
+                className="rounded-full"
+                disabled={!canType || draft.trim() === ''}
+                onClick={submit}
+                title={t('chat.send')}
+              >
+                <IconChevronUp />
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  /* ---- the three columns ------------------------------------------------- */
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 bg-background text-foreground">
+      {/* A. the sidebar */}
+      <aside className="relative flex w-[300px] shrink-0 flex-col border-r bg-sidebar max-[860px]:hidden">
+        <div className="flex items-center justify-between px-3 pt-3 pb-2">
+          <span className="text-[11px] font-semibold tracking-[.09em] text-muted-foreground uppercase">
+            {t('ws.sessions')}
+          </span>
+          <Button size="icon-xs" variant="ghost" onClick={chat.reset} title={t('chat.new')}>
+            <IconPlus />
+          </Button>
+        </div>
+
+        <div className="px-3 pb-2">
+          <InputGroup className="h-9 rounded-lg bg-background text-sm">
+            <InputGroupInput
+              aria-label={t('ws.search')}
+              placeholder={t('ws.search')}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <InputGroupAddon>
+              <IconSearch />
+            </InputGroupAddon>
+          </InputGroup>
+        </div>
+
+        <div className="scroll-fade-b min-h-0 flex-1 overflow-y-auto px-1.5">
+          {chat.denied !== null ? (
+            <div className="m-2 flex flex-col gap-2 rounded-lg border border-amber-500/50 bg-popover p-3 text-xs" role="alert">
+              <span>
+                {chat.denied
+                  ? t('chat.forgetNeedsControlFrom', { who: chat.denied })
+                  : t('chat.forgetNeedsControl')}
+              </span>
+              <Button size="xs" variant="outline" className="self-end" onClick={chat.clearDenied}>
+                {t('chat.ok')}
+              </Button>
+            </div>
+          ) : null}
+
+          {wipe ? (
+            <div className="m-2 rounded-lg border border-destructive bg-popover p-3 text-xs" role="alertdialog">
+              <div className="mb-1 font-semibold">{t('chat.forgetAllSure')}</div>
+              <div className="leading-relaxed text-muted-foreground">
+                {t('chat.forgetAllWhy', {
+                  n: chat.sessions.filter((x) => !x.live).length,
+                })}
+                {chat.sessions.some((x) => x.live) ? ` ${t('chat.forgetAllKeepsLive')}` : ''}
+              </div>
+              <div className="mt-2 flex gap-1.5">
+                <Button size="xs" variant="outline" className="flex-1" onClick={() => setWipe(false)}>
+                  {t('chat.cancel')}
+                </Button>
+                <Button
+                  size="xs"
+                  variant="destructive"
+                  className="flex-1"
+                  onClick={() => {
+                    chat.forgetAll()
+                    setWipe(false)
+                  }}
+                >
+                  {t('chat.forgetAllDo')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {sessions.length === 0 ? (
+            <div className="m-2 rounded-lg border border-dashed p-5 text-center text-xs leading-relaxed text-muted-foreground">
+              {search.trim() ? t('ws.noMatch', { q: search.trim() }) : t('chat.noHistory')}
+            </div>
+          ) : (
+            sessions.map((s) => (
+              <SessionRow
+                key={s.id}
+                session={s}
+                on={s.live ? chat.viewing === 0 : chat.viewing === s.id}
+                onOpen={() => chat.openSession(s.live ? 0 : s.id)}
+                onResume={() => chat.resume(s.id)}
+                onExport={() => chat.exportSession(s.id)}
+                onForget={() => chat.forget(s.id)}
+              />
+            ))
+          )}
+
+          {chat.sessions.some((x) => !x.live) ? (
+            <button
+              type="button"
+              className="mx-2 my-2 text-[11px] text-muted-foreground hover:text-destructive"
+              onClick={() => setWipe(true)}
+            >
+              {t('chat.forgetAll')}
+            </button>
+          ) : null}
+        </div>
+
+        {/* the foot: skills, then you — the ChatGPT gesture, our dress */}
+        <div className="relative flex flex-col gap-px border-t p-1.5">
+          <button
+            type="button"
+            className="flex h-10 items-center gap-2 rounded-lg px-2 text-[13px] hover:bg-foreground/5"
+            onClick={() => setCommandsOpen(true)}
+          >
+            <span className="flex w-7 justify-center text-muted-foreground">
+              <IconBox className="size-[17px]" />
+            </span>
+            {t('ws.skills')}
+          </button>
+
+          <button
+            type="button"
+            className={cn(
+              'flex h-10 items-center gap-2 rounded-lg px-2 text-[13px] hover:bg-foreground/5',
+              userOpen && 'bg-foreground/5',
+            )}
+            aria-expanded={userOpen}
+            onClick={() => {
+              setUserOpen((v) => !v)
+              setLangOpen(false)
+            }}
+          >
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted-foreground/10 text-xs text-foreground/70">
+              {initials(props.name || t('ws.you'))}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-left">
+              {props.name || t('ws.you')}
+            </span>
+            <IconChevronUp className={cn('size-3.5 text-muted-foreground transition-transform', userOpen && 'rotate-180')} />
+          </button>
+
+          {userOpen ? (
+            <div className="absolute right-1.5 bottom-[calc(100%-4px)] left-1.5 z-20 rounded-lg border bg-popover p-1.5 shadow-xl">
+              <div className="px-2 py-1.5">
+                <div className="text-[13px] font-medium">{props.name || t('ws.you')}</div>
+                <div className="text-[11px] text-muted-foreground">{statusLine(agent, t)}</div>
+              </div>
+              <div className="mx-1 mb-1 h-px bg-border" />
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-foreground/5"
+                onClick={() => {
+                  setUserOpen(false)
+                  props.onSettings()
+                }}
+              >
+                <IconSettings className="size-4 text-muted-foreground" />
+                {t('ws.settings')}
+              </button>
+              {langOpen ? (
+                LANGUAGES.map((l) => (
+                  <button
+                    key={l.code}
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-foreground/5"
+                    onClick={() => {
+                      setLanguage(l.code)
+                      setLangOpen(false)
+                      setUserOpen(false)
+                    }}
+                  >
+                    <span className="w-4" />
+                    {l.name}
+                    {i18n.language === l.code ? (
+                      <span className="ml-auto text-[11px] text-muted-foreground">✓</span>
+                    ) : null}
+                  </button>
+                ))
+              ) : (
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-foreground/5"
+                  onClick={() => setLangOpen(true)}
+                >
+                  <IconLanguage className="size-4 text-muted-foreground" />
+                  {t('label.language')}
+                  <span className="ml-auto text-[11px] text-muted-foreground">
+                    {LANGUAGES.find((l) => l.code === i18n.language)?.chip ?? ''}
+                  </span>
+                </button>
+              )}
+              <ThemeItem />
+              <a
+                href={DOCS_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-foreground/5"
+              >
+                <IconExternalLink className="size-4 text-muted-foreground" />
+                {t('ws.docs')}
+              </a>
+              {props.onLogout ? (
+                <>
+                  <div className="mx-1 my-1 h-px bg-border" />
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-destructive hover:bg-destructive/10"
+                    onClick={() => {
+                      setUserOpen(false)
+                      props.onLogout?.()
+                    }}
+                  >
+                    <IconLogout className="size-4" />
+                    {t('label.logout')}
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </aside>
+
+      {/* B. the conversation */}
+      <main className="relative flex min-w-0 flex-1 flex-col">
+        {term.open ? <Console term={term} onClose={term.stop} /> : null}
+
+        {past ? (
+          <div className="mx-auto mt-2 flex w-full max-w-[760px] items-center justify-center gap-2.5 rounded-lg border border-amber-500/50 bg-popover px-3 py-2 text-xs" role="status">
+            <span>{t('chat.viewingPast')}</span>
+            <Button size="xs" variant="outline" onClick={() => chat.resume(chat.viewing)}>
+              {t('chat.continueHere')}
+            </Button>
+            <Button size="xs" variant="outline" onClick={() => chat.openSession(0)}>
+              {t('chat.backToLive')}
+            </Button>
+          </div>
+        ) : null}
+
+        <MessageScrollerProvider>
+          <MessageScroller className="min-h-0 flex-1">
+            <MessageScrollerViewport className="px-5">
+              <MessageScrollerContent className="mx-auto w-full max-w-[760px] gap-4 pt-6 pb-2">
+                {!agent.ready ? (
+                  <Gate agent={agent} copied={copied} onCopy={copyRemedy} />
+                ) : null}
+
+                {chat.messages.length === 0 && agent.ready ? (
+                  <div className="m-auto flex max-w-[460px] flex-col items-center gap-2 py-16 text-center">
+                    <div className="text-xl font-semibold tracking-tight">
+                      {t('chat.emptyTitle')}
+                    </div>
+                    <p className="text-[13.5px] leading-relaxed text-muted-foreground">
+                      {t('chat.emptyHint')}
+                    </p>
+                  </div>
+                ) : null}
+
+                {chat.messages.map((m) => (
+                  <MessageScrollerItem key={m.key}>
+                    <Row m={m} since={chat.since} />
+                  </MessageScrollerItem>
+                ))}
+              </MessageScrollerContent>
+            </MessageScrollerViewport>
+            <MessageScrollerButton />
+          </MessageScroller>
+        </MessageScrollerProvider>
+
+        {/* C. the desktop, as a card in the conversation */}
+        <div className="mx-auto w-full max-w-[760px] shrink-0 px-5 pt-1.5">
+          {stageOpen ? (
+            <figure className="overflow-hidden rounded-2xl border bg-card">
+              <div className="flex items-center gap-2 border-b px-3 py-1.5 text-[11px] text-muted-foreground">
+                <span className={cn('size-[5px] rounded-full', d.state === 'live' ? 'bg-[var(--sd-drive)] shadow-[0_0_6px_var(--sd-drive)]' : 'bg-muted-foreground')} />
+                {t('ws.stage')}
+                <span className="ml-auto flex items-center gap-1">
+                  <Button size="icon-xs" variant="ghost" onClick={() => props.onExpand(true)} title={t('ws.expand')}>
+                    <IconArrowsDiagonal />
+                  </Button>
+                  <Button size="icon-xs" variant="ghost" onClick={() => setStageOpen(false)} title={t('ws.collapse')}>
+                    <IconX />
+                  </Button>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => props.onExpand(true)}
+                className="relative block aspect-[16/10] w-full cursor-zoom-in bg-black"
+                aria-label={t('ws.expand')}
+              >
+                {props.screen}
+              </button>
+              <div className="flex items-center gap-2.5 border-t bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className={cn('size-1.5 shrink-0 rounded-full', yours || agentDrives ? 'bg-[var(--sd-drive)] shadow-[0_0_8px_var(--sd-drive)]' : 'bg-[var(--sd-watch)]')} />
+                  <span className="truncate">
+                    {yours
+                      ? t('room.youControl')
+                      : agentDrives
+                        ? t('ws.agentDrives')
+                        : holder
+                          ? t('room.controlledBy', { name: holder })
+                          : t('room.free')}
+                  </span>
+                </span>
+                <Button
+                  size="xs"
+                  variant={yours ? 'outline' : 'default'}
+                  className="ml-auto shrink-0"
+                  onClick={d.toggleControl}
+                >
+                  {yours ? t('room.release') : t('room.take')}
+                </Button>
+              </div>
+            </figure>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setStageOpen(true)}
+              className="flex w-full items-center gap-2 rounded-lg border bg-card px-3 py-2 text-xs text-muted-foreground hover:bg-foreground/5"
+            >
+              <IconDeviceDesktop className="size-4" />
+              {t('ws.stage')}
+              <span className={cn('ml-auto size-[5px] rounded-full', d.state === 'live' ? 'bg-[var(--sd-drive)] shadow-[0_0_6px_var(--sd-drive)]' : 'bg-muted-foreground')} />
+            </button>
+          )}
+        </div>
+
+        {/* the composer */}
+        <div className="mx-auto w-full max-w-[760px] shrink-0 px-5 pt-3 pb-4">
+          <div className="relative">
+            {picker ? (
+              <div className="absolute right-0 bottom-[calc(100%+6px)] left-0 z-20 max-h-72 overflow-y-auto rounded-lg border bg-popover p-1.5 shadow-xl" role="listbox">
+                {agent.models.length === 0 ? (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('chat.noModels')}</div>
+                ) : (
+                  [...agent.models]
+                    /* Ordered by how likely you are to want it: the provider
+                     * you are ON first, then the reachable, then the locked —
+                     * shown rather than hidden, because "which exist" and
+                     * "which can I use" are different questions. */
+                    .sort((a, b) => {
+                      const mine = (x: typeof a) => Number(x.provider === agent.provider)
+                      return mine(b) - mine(a) || Number(b.ready) - Number(a.ready)
+                    })
+                    .map((mo) => {
+                      const name = `${mo.provider}/${mo.id}`
+                      const on = name === `${agent.provider}/${agent.model}`
+                      return (
+                        <button
+                          key={name}
+                          type="button"
+                          disabled={!mo.ready}
+                          className="flex w-full items-baseline gap-3 rounded-md px-2 py-1.5 text-left hover:bg-foreground/5 disabled:opacity-50"
+                          onClick={() => {
+                            chat.ask(`/model ${name}`)
+                            setPicker(false)
+                          }}
+                        >
+                          <span className="min-w-24 shrink-0 font-mono text-xs">
+                            {on ? '● ' : ''}
+                            {name}
+                          </span>
+                          <span className="truncate text-xs text-muted-foreground">
+                            {mo.ready ? mo.note : t('chat.modelLocked')}
+                          </span>
+                        </button>
+                      )
+                    })
+                )}
+              </div>
+            ) : null}
+
+            {palette.length > 0 ? (
+              <div className="absolute right-0 bottom-[calc(100%+6px)] left-0 z-20 max-h-72 overflow-y-auto rounded-lg border bg-popover p-1.5 shadow-xl" role="listbox">
+                {palette.map((c) => (
+                  <button
+                    key={c.name}
+                    type="button"
+                    className="flex w-full items-baseline gap-3 rounded-md px-2 py-1.5 text-left hover:bg-foreground/5"
+                    onClick={() => {
+                      setDraft(c.name + ' ')
+                      inputRef.current?.focus()
+                    }}
+                  >
+                    <span className="min-w-24 shrink-0 font-mono text-xs">{c.name}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {i18n.exists(`chat.${c.id}`) ? t(`chat.${c.id}`) : c.what}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="rounded-2xl border bg-card px-3 pt-2.5 pb-2 focus-within:border-ring">
+              <textarea
+                ref={inputRef}
+                rows={1}
+                value={draft}
+                disabled={!canType}
+                placeholder={
+                  past
+                    ? t('chat.placeholderPast')
+                    : agent.ready
+                      ? t('chat.placeholder')
+                      : t('chat.placeholderOff')
+                }
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    submit()
+                  }
+                  e.stopPropagation()
+                }}
+                onKeyUp={(e) => e.stopPropagation()}
+                className="max-h-44 w-full resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
+              />
+              <div className="mt-2 flex items-center gap-2">
+                <span className="truncate text-[11px] text-muted-foreground">
+                  {busy ? t('chat.working') : t('chat.enterToSend')}
+                  {agent.model ? ` · ${agent.model}` : ''}
+                  {agent.mode ? ` · ${agent.mode}` : ''}
+                </span>
+                <span className="ml-auto flex items-center gap-1">
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className={cn(term.open && 'bg-muted')}
+                    onClick={() => (term.open ? term.stop() : term.start())}
+                    title={t('chat.console')}
+                    aria-pressed={term.open}
+                  >
+                    <IconTerminal2 />
+                  </Button>
+                  {busy ? (
+                    <Button size="icon-sm" variant="outline" className="rounded-full" onClick={chat.stop} title={t('chat.stop')}>
+                      <IconPlayerStopFilled className="size-3" />
+                    </Button>
+                  ) : (
+                    <Button
+                      size="icon-sm"
+                      className="rounded-full"
+                      disabled={!canType || draft.trim() === ''}
+                      onClick={submit}
+                      title={t('chat.send')}
+                    >
+                      <IconChevronUp />
+                    </Button>
+                  )}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* C2. the session panel — the terminal's /panel, ctrl+b here too */}
+      {panelOpen ? (
+        <aside className="flex w-[270px] shrink-0 flex-col overflow-y-auto border-l bg-sidebar p-3.5 max-[1180px]:hidden">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="flex-1 text-[11px] font-semibold tracking-[.09em] text-muted-foreground uppercase">
+              {t('ws.panel')}
+            </span>
+            <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              ctrl+b
+            </kbd>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs leading-relaxed">
+            <span
+              className={cn(
+                'size-1.5 shrink-0 rounded-full',
+                agent.ready
+                  ? 'bg-[var(--sd-drive)]'
+                  : agent.present
+                    ? 'bg-[var(--sd-watch)]'
+                    : 'bg-muted-foreground',
+              )}
+            />
+            <span className="break-words">{statusLine(agent, t)}</span>
+          </div>
+
+          <div className="my-3 h-px shrink-0 bg-border" />
+
+          <div className="mb-2 text-[11px] font-semibold tracking-[.09em] text-muted-foreground uppercase">
+            {t('ws.totals')}
+          </div>
+          {(
+            [
+              [t('chat.turns', { n: totals.turns }), totals.turns],
+              [t('chat.calls', { n: totals.calls }), totals.calls],
+              [t('chat.tokens', { n: totals.toks }), totals.toks],
+            ] as const
+          ).map(([label]) => (
+            <div key={label} className="py-1 text-xs text-muted-foreground">
+              {label}
+            </div>
+          ))}
+          {busy ? (
+            <div className="mt-1 text-xs text-[var(--sd-drive)]">{t('chat.working')}</div>
+          ) : null}
+
+          <div className="my-3 h-px shrink-0 bg-border" />
+
+          <div className="flex flex-col gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              className="justify-start gap-2"
+              disabled={!agent.ready}
+              onClick={() => chat.ask('/compact')}
+            >
+              {t('ws.compact')}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="justify-start gap-2"
+              disabled={!agent.ready}
+              onClick={() => chat.ask('/rewind')}
+            >
+              {t('ws.rewind')}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="justify-start gap-2"
+              disabled={!agent.ready}
+              onClick={() => {
+                setDraft('/memory ')
+                inputRef.current?.focus()
+              }}
+            >
+              {t('ws.memory')}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="justify-start gap-2"
+              onClick={() => chat.exportSession(0)}
+            >
+              {t('chat.exportLive')}
+            </Button>
+          </div>
+          <p className="mt-2 text-[10.5px] leading-relaxed text-muted-foreground">
+            {t('ws.rewindNote')}
+          </p>
+        </aside>
+      ) : null}
+
+      {/* the commands sheet: the / palette, laid out to read */}
+      <Dialog open={commandsOpen} onOpenChange={setCommandsOpen}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>{t('ws.skills')}</DialogTitle>
+            <DialogDescription>{t('ws.skillsWhy')}</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col">
+            {chat.commands.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-5 text-center text-xs text-muted-foreground">
+                {t('chat.offline')}
+              </div>
+            ) : (
+              chat.commands.map((c) => (
+                <button
+                  key={c.name}
+                  type="button"
+                  className="flex w-full items-baseline gap-3 border-t px-2 py-2 text-left first:border-t-0 hover:bg-foreground/5"
+                  onClick={() => {
+                    setCommandsOpen(false)
+                    setDraft(c.name + ' ')
+                    inputRef.current?.focus()
+                  }}
+                >
+                  <span className="min-w-24 shrink-0 font-mono text-xs">{c.name}</span>
+                  <span className="text-xs leading-relaxed text-muted-foreground">
+                    {i18n.exists(`chat.${c.id}`) ? t(`chat.${c.id}`) : c.what}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+          <div className="rounded-lg border border-dashed p-3 text-[11.5px] leading-relaxed text-muted-foreground">
+            <b className="font-medium text-foreground">{t('ws.connectLocalTitle')}</b>{' '}
+            {t('ws.connectLocal')}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+/* The theme row: OpenBot's binary dark/light, our storage key. */
+function ThemeItem() {
+  const { t } = useTranslation()
+  const [dark, setDark] = useState(() =>
+    document.documentElement.classList.contains('dark'),
+  )
+  const flip = () => {
+    const next = !dark
+    setDark(next)
+    try {
+      localStorage.setItem('sentineldesk-theme', next ? 'dark' : 'light')
+    } catch {
+      /* a browser with storage off still switches, it just forgets */
+    }
+    document.documentElement.classList.toggle('dark', next)
+    document.documentElement.style.colorScheme = next ? 'dark' : 'light'
+  }
+  return (
+    <button
+      type="button"
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-foreground/5"
+      onClick={flip}
+    >
+      {dark ? (
+        <IconMoon className="size-4 text-muted-foreground" />
+      ) : (
+        <IconSun className="size-4 text-muted-foreground" />
+      )}
+      {t('ws.theme')}
+      <span className="ml-auto text-[11px] text-muted-foreground">
+        {dark ? t('ws.themeDark') : t('ws.themeLight')}
+      </span>
+    </button>
+  )
+}

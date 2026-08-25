@@ -18,6 +18,15 @@
     <title>SentinelDesk</title>
   </head>
   <body>
+    <script>
+      /* Before paint: dark unless somebody chose light (see lib/theme.ts). */
+      (function () {
+        var dark = true;
+        try { dark = localStorage.getItem('sentineldesk-theme') !== 'light'; } catch (e) {}
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

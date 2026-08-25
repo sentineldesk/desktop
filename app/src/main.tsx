@@ -14,6 +14,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import './i18n'
+// OpenBot's sheet first — it declares the shadcn tokens ours derive from.
+import './openbot.css'
 import './styles.css'
 // The terminal's own stylesheet. Imported once, here, rather than from the
 // component: it is a global sheet and a dynamic import would leave the first

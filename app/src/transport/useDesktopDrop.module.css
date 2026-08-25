@@ -52,8 +52,8 @@
   padding: 8px 12px;
   border: 1px solid rgb(255 255 255 / 0.14);
   border-radius: 10px;
-  background: #141821;
-  color: #e8e6e1;
+  background: var(--sd-panel);
+  color: var(--sd-ink);
 }
 
 .itemName {
@@ -66,7 +66,7 @@
 
 .itemSize {
   font-size: 11px;
-  color: #9a958c;
+  color: var(--sd-dim);
 }
 
 .barTrack {
@@ -81,12 +81,12 @@
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: #2fbf71;
+  background: var(--sd-drive);
   transition: width 0.15s linear;
 }
 
 .barBad {
-  background: #e05252;
+  background: var(--sd-bad);
 }
 
 /* A delivery waiting on a person: Save (the click that may open a real save
@@ -100,10 +100,10 @@
 
 .itemSave {
   padding: 3px 12px;
-  border: 1px solid #2fbf71;
+  border: 1px solid var(--sd-drive);
   border-radius: 999px;
   background: none;
-  color: #2fbf71;
+  color: var(--sd-drive);
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
@@ -117,12 +117,12 @@
   margin-left: auto;
   border: 0;
   background: none;
-  color: #9a958c;
+  color: var(--sd-dim);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
 }
 
 .itemDismiss:hover {
-  color: #e8e6e1;
+  color: var(--sd-ink);
 }
