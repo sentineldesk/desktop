@@ -27,6 +27,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { preferredDevice, rememberDevice, type MediaKind } from './mediaPrefs'
+import { MatrixDie, randomMatrixName } from '../ui/NameGate'
 import styles from './MediaSettings.module.css'
 
 /* Peak amplitude is divided by this to reach 0…1 — conversational speech
@@ -328,13 +329,21 @@ export function MediaSettings({
           <div className={styles.fields}>
             <label className={styles.field}>
               <span className={styles.label}>{t('settings.name')}</span>
-              <input
-                className={styles.select}
-                value={name}
-                maxLength={48}
-                placeholder={t('settings.namePlaceholder')}
-                onChange={(e) => setName(e.target.value.replace(NAME_OK, ''))}
-              />
+              {/* The gate's die, here too: same list, same gesture. */}
+              <div style={{ position: 'relative' }}>
+                <input
+                  className={styles.select}
+                  value={name}
+                  maxLength={48}
+                  placeholder={t('settings.namePlaceholder')}
+                  onChange={(e) => setName(e.target.value.replace(NAME_OK, ''))}
+                  style={{ width: '100%', paddingRight: 40, boxSizing: 'border-box' }}
+                />
+                <MatrixDie
+                  title={t('name.shuffle')}
+                  onClick={() => setName(randomMatrixName(name))}
+                />
+              </div>
               <span className={styles.hint}>{t('settings.nameHint')}</span>
             </label>
 

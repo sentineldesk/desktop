@@ -48,9 +48,37 @@ const MATRIX = [
 const NAME_OK = /[^A-Za-z0-9 _-]/g
 const NAME_KEY = 'sentineldesk.name'
 
-function draw(not?: string): string {
+export function randomMatrixName(not?: string): string {
   const pool = not ? MATRIX.filter((n) => n !== not) : MATRIX
   return pool[Math.floor(Math.random() * pool.length)]
+}
+const draw = randomMatrixName
+
+/* The die, as a button an input wears: absolute inside a relative wrapper,
+ * centred on the input's height. The gate uses it; Settings borrows it. */
+export function MatrixDie(props: { title: string; onClick(): void }) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      title={props.title}
+      style={{
+        position: 'absolute', right: 6, top: '50%',
+        transform: 'translateY(-50%)', width: 28, height: 28, padding: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'transparent', border: 0, color: 'var(--sd-dim)',
+        cursor: 'pointer',
+      }}
+    >
+      <svg viewBox="0 0 24 24" style={{ width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' }}>
+        <rect x="4" y="4" width="16" height="16" rx="3" />
+        <circle cx="9" cy="9" r="1" fill="currentColor" stroke="none" />
+        <circle cx="15" cy="9" r="1" fill="currentColor" stroke="none" />
+        <circle cx="9" cy="15" r="1" fill="currentColor" stroke="none" />
+        <circle cx="15" cy="15" r="1" fill="currentColor" stroke="none" />
+      </svg>
+    </button>
+  )
 }
 
 export function NameGate(props: { stored: string; onDone(name: string): void }) {
@@ -101,26 +129,7 @@ export function NameGate(props: { stored: string; onDone(name: string): void }) 
             style={{ paddingRight: 44, marginTop: 0, textAlign: 'center' }}
             aria-label={t('name.title')}
           />
-          <button
-            type="button"
-            onClick={() => setValue(draw(value))}
-            title={t('name.shuffle')}
-            style={{
-              position: 'absolute', right: 6, top: 6, width: 28, height: 28,
-              padding: 0, display: 'flex', alignItems: 'center',
-              justifyContent: 'center', background: 'transparent',
-              color: 'var(--sd-dim)', cursor: 'pointer',
-            }}
-          >
-            {/* a die: the redraw */}
-            <svg viewBox="0 0 24 24" style={{ width: 16, height: 16, fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' }}>
-              <rect x="4" y="4" width="16" height="16" rx="3" />
-              <circle cx="9" cy="9" r="1" fill="currentColor" stroke="none" />
-              <circle cx="15" cy="9" r="1" fill="currentColor" stroke="none" />
-              <circle cx="9" cy="15" r="1" fill="currentColor" stroke="none" />
-              <circle cx="15" cy="15" r="1" fill="currentColor" stroke="none" />
-            </svg>
-          </button>
+          <MatrixDie title={t('name.shuffle')} onClick={() => setValue(draw(value))} />
         </div>
 
         <button type="submit">{t('name.go')}</button>

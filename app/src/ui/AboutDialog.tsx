@@ -14,12 +14,40 @@
  * large on a drive-tinted panel, the facts in a column beside it. Rendered
  * at the shell so both modes open the same card from their own menus. */
 
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { IconCheck, IconCopy } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogClose, DialogTitle } from '@/components/ui/dialog'
 
 const REPO_URL = 'https://github.com/sentineldesk'
+const AUTHOR_MAIL = 'fpereira@cnsoluciones.com'
+
+/* The address, one press away: the mailto opens a composer for whoever has
+ * one; the copy serves everybody else. */
+function CopyMail() {
+  const [done, setDone] = useState(false)
+  return (
+    <button
+      type="button"
+      className="shrink-0 text-muted-foreground hover:text-foreground"
+      title={AUTHOR_MAIL}
+      onClick={() => {
+        void navigator.clipboard.writeText(AUTHOR_MAIL).then(() => {
+          setDone(true)
+          setTimeout(() => setDone(false), 1600)
+        })
+      }}
+    >
+      {done ? (
+        <IconCheck className="size-3.5 text-[var(--sd-drive)]" />
+      ) : (
+        <IconCopy className="size-3.5" />
+      )}
+    </button>
+  )
+}
 
 export function AboutDialog(props: {
   open: boolean
@@ -67,7 +95,18 @@ export function AboutDialog(props: {
               </div>
               <div className="flex gap-2">
                 <span className="w-[52px] shrink-0 text-muted-foreground">{t('about.author')}</span>
-                <span className="truncate">Federico Pereira &lt;fpereira@cnsoluciones.com&gt;</span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span>Federico Pereira</span>
+                  <span className="flex items-center gap-1.5">
+                    <a
+                      href={`mailto:${AUTHOR_MAIL}`}
+                      className="truncate text-[var(--sd-drive)] hover:underline"
+                    >
+                      {AUTHOR_MAIL}
+                    </a>
+                    <CopyMail />
+                  </span>
+                </span>
               </div>
               <div className="flex gap-2">
                 <span className="w-[52px] shrink-0 text-muted-foreground">{t('about.license')}</span>
