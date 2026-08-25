@@ -33,6 +33,7 @@ import { useTranslation } from 'react-i18next'
 import {
   IconArrowRight,
   IconBox,
+  IconChevronRight,
   IconChevronUp,
   IconDeviceDesktop,
   IconDots,
@@ -144,17 +145,7 @@ function Row({ m, since }: { m: AgentMessage; since: number }) {
     <MessageRow>
       <MessageContent>
         {m.steps.length > 0 ? (
-          <div className="min-w-0">
-            {m.steps.map((step) => (
-              <ToolLine
-                key={step.key}
-                label={step.tool}
-                {...(step.detail ? { detail: step.detail } : {})}
-                running={m.streaming && step.key === m.steps[m.steps.length - 1].key && m.text === ''}
-                failed={step.tool === 'interrupted'}
-              />
-            ))}
-          </div>
+          <Tools steps={m.steps} streaming={m.streaming} busyText={m.text === ''} />
         ) : null}
 
         {m.text !== '' ? (
@@ -190,6 +181,103 @@ function Row({ m, since }: { m: AgentMessage; since: number }) {
         ) : null}
       </MessageContent>
     </MessageRow>
+  )
+}
+
+/* ---- the tool chain, folded ----------------------------------------------- */
+
+/* Two levels of accordion, the Claude Desktop shape the owner asked for by
+ * screenshot: a "Tools" header that folds the WHOLE chain — open while the
+ * run streams so the work is visible, folded once it ends, a person's click
+ * winning over both — and inside it one row per call, each folded to a
+ * single line until ITS chevron is pressed, which reveals the call's full
+ * output in a scrollable well. The transcript keeps its reading rhythm; the
+ * evidence stays one press away. */
+function Tools({
+  steps,
+  streaming,
+  busyText,
+}: {
+  steps: AgentMessage['steps']
+  streaming: boolean
+  busyText: boolean
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const touched = useRef(false)
+  useEffect(() => {
+    if (!touched.current) setOpen(streaming)
+  }, [streaming])
+  const last = steps[steps.length - 1]
+
+  return (
+    <div className="min-w-0 overflow-hidden rounded-lg border bg-card">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => {
+          touched.current = true
+          setOpen((v) => !v)
+        }}
+        className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-xs hover:bg-foreground/5"
+      >
+        <IconChevronRight
+          className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')}
+        />
+        <span className="shrink-0 font-medium">
+          {t('ws.tools')} · {steps.length}
+        </span>
+        {!open && streaming && last ? (
+          <span
+            className={cn(
+              'min-w-0 truncate font-mono text-[11px] text-muted-foreground',
+              busyText && 'tool-line-running',
+            )}
+          >
+            {last.tool}
+          </span>
+        ) : null}
+      </button>
+
+      {open ? (
+        <div className="flex flex-col">
+          {steps.map((step, i) => {
+            const running = streaming && busyText && i === steps.length - 1
+            const broke = step.tool === 'interrupted'
+            return (
+              <details key={step.key} className="group/step border-t">
+                {/* Native <details>: each call folds on its own, stateless,
+                    and a re-render mid-stream never snaps one shut. */}
+                <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 px-3 py-1.5 text-xs hover:bg-foreground/5 [&::-webkit-details-marker]:hidden">
+                  <IconChevronRight className="size-3 shrink-0 text-muted-foreground transition-transform group-open/step:rotate-90" />
+                  <span
+                    className={cn(
+                      'shrink-0 font-mono text-[11px]',
+                      broke ? 'text-amber-600 dark:text-amber-500' : 'text-foreground',
+                      running && 'tool-line-running',
+                    )}
+                  >
+                    {step.tool}
+                  </span>
+                  {step.detail ? (
+                    <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                      {step.detail}
+                    </span>
+                  ) : null}
+                </summary>
+                {step.detail ? (
+                  <pre className="mx-3 mb-2 max-h-64 overflow-auto rounded-md bg-background p-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                    {step.detail}
+                  </pre>
+                ) : (
+                  <div className="mx-3 mb-2 text-[11px] text-muted-foreground">—</div>
+                )}
+              </details>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
   )
 }
 

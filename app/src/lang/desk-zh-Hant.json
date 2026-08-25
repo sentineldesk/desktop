@@ -310,5 +310,6 @@
   "ws.composerHint": "代理能看見並操作這個桌面。你隨時可以打斷它。",
   "ws.live": "即時",
   "ws.download": "下載",
-  "ws.remove": "移除"
+  "ws.remove": "移除",
+  "ws.tools": "工具"
 }

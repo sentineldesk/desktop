@@ -310,5 +310,6 @@
   "ws.composerHint": "El agente ve y maneja este escritorio. Podés interrumpirlo cuando quieras.",
   "ws.live": "En vivo",
   "ws.download": "Descargar",
-  "ws.remove": "Quitar"
+  "ws.remove": "Quitar",
+  "ws.tools": "Herramientas"
 }

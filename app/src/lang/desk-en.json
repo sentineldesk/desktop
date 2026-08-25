@@ -310,5 +310,6 @@
   "ws.composerHint": "The agent sees and drives this desktop. You can interrupt it whenever you want.",
   "ws.live": "Live",
   "ws.download": "Download",
-  "ws.remove": "Remove"
+  "ws.remove": "Remove",
+  "ws.tools": "Tools"
 }
