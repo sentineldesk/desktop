@@ -194,6 +194,14 @@ function Row({ m, since }: { m: AgentMessage; since: number }) {
 
 /* OpenBot's roster row, re-pointed: no router, no react-query — opening is a
  * DataChannel ask and the row menu carries the drawer's old verbs. */
+/* The mock's row avatar: a gradient disc, stable per title so a
+ * conversation keeps its colour without a server assigning one. */
+function titleHue(text: string): number {
+  let h = 0
+  for (const c of text) h = (h * 31 + c.charCodeAt(0)) % 360
+  return h
+}
+
 function SessionRow(props: {
   session: AgentSession
   on: boolean
@@ -214,8 +222,15 @@ function SessionRow(props: {
       <button
         type="button"
         onClick={props.onOpen}
-        className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
+        className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
       >
+        <span
+          className="mt-0.5 size-7 shrink-0 rounded-full"
+          style={{
+            background: `linear-gradient(140deg, hsl(${titleHue(s.title)} 38% 38%), hsl(${(titleHue(s.title) + 45) % 360} 55% 55%))`,
+          }}
+        />
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex min-w-0 items-baseline justify-between gap-2">
           <span className="truncate text-[13px] font-medium">
             {s.title || t('chat.emptyTitle')}
@@ -227,6 +242,7 @@ function SessionRow(props: {
         <span className="truncate text-[11px] text-muted-foreground">
           {t('chat.turns', { n: s.turns })}
           {s.live ? ` · ${t('chat.thisOne')}` : ''}
+        </span>
         </span>
       </button>
       <DropdownMenu>
@@ -309,6 +325,7 @@ export function AgentWorkspace(props: {
   }, [stageOpen])
 
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   /* ctrl+b, exactly the terminal's key for the same panel. */
   useEffect(() => {
@@ -756,7 +773,7 @@ export function AgentWorkspace(props: {
               <button
                 type="button"
                 onClick={() => props.onExpand(true)}
-                className="relative block aspect-[16/10] w-full cursor-zoom-in bg-black"
+                className="relative block aspect-video w-full cursor-zoom-in bg-black"
                 aria-label={t('ws.expand')}
               >
                 {props.screen}
@@ -887,12 +904,41 @@ export function AgentWorkspace(props: {
                 onKeyUp={(e) => e.stopPropagation()}
                 className="max-h-44 w-full resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
               />
-              <div className="mt-2 flex items-center gap-2">
-                <span className="truncate text-[11px] text-muted-foreground">
-                  {busy ? t('chat.working') : t('chat.enterToSend')}
-                  {agent.model ? ` · ${agent.model}` : ''}
-                  {agent.mode ? ` · ${agent.mode}` : ''}
-                </span>
+              <div className="mt-2.5 flex items-center gap-2">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    /* Attach = the drop layer's path, from a button: handing
+                     * a file to the room is provisioning, not driving. */
+                    for (const f of Array.from(e.target.files ?? [])) {
+                      void d.uploadFile(f, () => {}).catch(() => {})
+                    }
+                    e.target.value = ''
+                  }}
+                />
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <IconPlus className="size-3.5" />
+                  {t('ws.attach')}
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-foreground/5 hover:text-foreground',
+                    stageOpen && 'bg-foreground/5 text-foreground',
+                  )}
+                  aria-pressed={stageOpen}
+                  onClick={() => setStageOpen((v) => !v)}
+                >
+                  <IconDeviceDesktop className="size-3.5" />
+                  {t('ws.desktopChip')}
+                </button>
                 <span className="ml-auto flex items-center gap-1">
                   <Button
                     size="icon-xs"
@@ -921,6 +967,11 @@ export function AgentWorkspace(props: {
                   )}
                 </span>
               </div>
+            </div>
+            <div className="mt-2 truncate text-center text-[11px] text-muted-foreground/70">
+              {busy
+                ? `${t('chat.working')}${agent.model ? ` · ${agent.model}` : ''}`
+                : `${t('ws.composerHint')}${agent.model ? ` · ${agent.model}` : ''}${agent.mode ? ` · ${agent.mode}` : ''}`}
             </div>
           </div>
         </div>

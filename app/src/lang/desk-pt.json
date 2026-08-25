@@ -304,5 +304,8 @@
   "ws.rewind": "Rebobinar uma tarefa",
   "ws.memory": "Lembrar de algo…",
   "ws.rewindNote": "Rebobinar volta a conversa para antes de uma tarefa. O desktop NÃO é rebobinado.",
-  "ws.loginSubtitle": "Entre para acessar seu desktop remoto."
+  "ws.loginSubtitle": "Entre para acessar seu desktop remoto.",
+  "ws.attach": "Anexar",
+  "ws.desktopChip": "Desktop",
+  "ws.composerHint": "O agente vê e controla este desktop. Você pode interrompê-lo quando quiser."
 }

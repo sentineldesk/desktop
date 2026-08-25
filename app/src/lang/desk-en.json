@@ -304,5 +304,8 @@
   "ws.rewind": "Rewind a task",
   "ws.memory": "Remember something…",
   "ws.rewindNote": "Rewinding moves the conversation back before a task. The desktop is NOT rewound.",
-  "ws.loginSubtitle": "Sign in to access your remote desktop."
+  "ws.loginSubtitle": "Sign in to access your remote desktop.",
+  "ws.attach": "Attach",
+  "ws.desktopChip": "Desktop",
+  "ws.composerHint": "The agent sees and drives this desktop. You can interrupt it whenever you want."
 }

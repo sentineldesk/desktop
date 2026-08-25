@@ -304,5 +304,8 @@
   "ws.rewind": "Rebobinar una tarea",
   "ws.memory": "Que recuerde algo…",
   "ws.rewindNote": "Rebobinar vuelve la conversación a antes de una tarea. El escritorio NO se rebobina.",
-  "ws.loginSubtitle": "Iniciá sesión para entrar a tu escritorio remoto."
+  "ws.loginSubtitle": "Iniciá sesión para entrar a tu escritorio remoto.",
+  "ws.attach": "Adjuntar",
+  "ws.desktopChip": "Escritorio",
+  "ws.composerHint": "El agente ve y maneja este escritorio. Podés interrumpirlo cuando quieras."
 }

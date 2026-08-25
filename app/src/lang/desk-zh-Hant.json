@@ -304,5 +304,8 @@
   "ws.rewind": "倒回一項任務",
   "ws.memory": "記住一件事…",
   "ws.rewindNote": "倒回只影響對話，回到某項任務之前。桌面「不會」被倒回。",
-  "ws.loginSubtitle": "登入以進入你的遠端桌面。"
+  "ws.loginSubtitle": "登入以進入你的遠端桌面。",
+  "ws.attach": "附加",
+  "ws.desktopChip": "桌面",
+  "ws.composerHint": "代理能看見並操作這個桌面。你隨時可以打斷它。"
 }
