@@ -33,6 +33,7 @@ import { useTranslation } from 'react-i18next'
 import {
   IconArrowRight,
   IconBox,
+  IconCamera,
   IconCheck,
   IconChevronRight,
   IconCopy,
@@ -48,6 +49,7 @@ import {
   IconPencil,
   IconPhoto,
   IconPlayerPlayFilled,
+  IconPlayerRecordFilled,
   IconPlayerStopFilled,
   IconPlus,
   IconSearch,
@@ -102,7 +104,7 @@ import { ToolLine } from '@/components/channels/tool-line'
 import i18n, { LANGUAGES, setLanguage } from '../i18n'
 import type { AgentMessage, AgentSession } from '../transport/agentChat'
 import type { useDesktopStream } from '../transport/useDesktopStream'
-import { Console, Gate, statusLine, Thinking, when } from '../transport/chatParts'
+import { Console, Gate, statusLine, when } from '../transport/chatParts'
 
 const DOCS_URL = 'https://sentineldesk.github.io/desktop/docs/guide/index.html'
 
@@ -124,7 +126,14 @@ function initials(name: string): string {
  * full-width markdown (Streamdown, links hardened in lib/markdown); a system
  * line sits centred and small. The steps keep ToolLine's single-line action
  * rhythm, shimmering while they run. */
-function Row({ m, since }: { m: AgentMessage; since: number }) {
+/* "6m 45s", or "45s" under a minute — the shape the owner asked for. */
+function fmtDur(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  const m = Math.floor(s / 60)
+  return m ? `${m}m ${s % 60}s` : `${s}s`
+}
+
+function Row({ m }: { m: AgentMessage }) {
   const { t } = useTranslation()
   if (m.role === 'human') {
     return (
@@ -157,10 +166,6 @@ function Row({ m, since }: { m: AgentMessage; since: number }) {
           </div>
         ) : null}
 
-        {m.streaming && m.text === '' && m.steps.length === 0 ? (
-          <Thinking since={since} />
-        ) : null}
-
         {m.ending ? (
           <MessageFooter
             className={cn(
@@ -180,6 +185,7 @@ function Row({ m, since }: { m: AgentMessage; since: number }) {
             {m.ending.inToks || m.ending.outToks ? (
               <span>{t('chat.tokens', { n: m.ending.inToks + m.ending.outToks })}</span>
             ) : null}
+            {m.ending.ms ? <span>{fmtDur(m.ending.ms)}</span> : null}
           </MessageFooter>
         ) : null}
       </MessageContent>
@@ -206,11 +212,11 @@ function Tools({
   busyText: boolean
 }) {
   const { t } = useTranslation()
+  /* Folded until pressed, ALWAYS — streaming included. The owner asked for
+   * the WhatsApp shape: while the run works, the folded header itself is the
+   * typing indicator (the current tool's name, shimmering); the chain opens
+   * only under a finger. */
   const [open, setOpen] = useState(false)
-  const touched = useRef(false)
-  useEffect(() => {
-    if (!touched.current) setOpen(streaming)
-  }, [streaming])
   const last = steps[steps.length - 1]
 
   return (
@@ -218,10 +224,7 @@ function Tools({
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => {
-          touched.current = true
-          setOpen((v) => !v)
-        }}
+        onClick={() => setOpen((v) => !v)}
         className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-xs hover:bg-foreground/5"
       >
         <IconChevronRight
@@ -710,13 +713,17 @@ export function AgentWorkspace(props: {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  /* The roster loads when the sidebar appears, and refreshes when a run ends
-   * — a finished exchange is what changes it. */
+  /* The roster loads when the RUNTIME is there to answer, and refreshes when
+   * a run ends — a finished exchange is what changes it. Gated on ready and
+   * not on mount, because a request sent while the link is still coming up is
+   * dropped silently and nothing ever retried it: the drawer sat on "no past
+   * conversations yet" over a database holding plenty. */
   const busy = chat.busy !== ''
   useEffect(() => {
+    if (!agent.ready) return
     chat.loadSessions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy])
+  }, [busy, agent.ready])
 
   /* A reloaded browser used to show an empty thread while the roster still
    * marked a live conversation — the words were in the runtime all along.
@@ -812,6 +819,18 @@ export function AgentWorkspace(props: {
       }
     }
     return { turns, calls, toks }
+  }, [chat.messages])
+
+  /* What the run is DOING right now — the last tool of the open bubble, or
+   * nothing, which the activity line reads as "waiting for the agent". */
+  const activity = useMemo(() => {
+    for (let i = chat.messages.length - 1; i >= 0; i--) {
+      const m = chat.messages[i]
+      if (m.role === 'agent' && m.streaming) {
+        return m.steps.length ? m.steps[m.steps.length - 1].tool : ''
+      }
+    }
+    return ''
   }, [chat.messages])
 
   const yours = d.control.yours
@@ -1140,9 +1159,18 @@ export function AgentWorkspace(props: {
 
                 {chat.messages.map((m) => (
                   <MessageScrollerItem key={m.key}>
-                    <Row m={m} since={chat.since} />
+                    <Row m={m} />
                   </MessageScrollerItem>
                 ))}
+
+                {/* The one line that answers "is anything happening, and for
+                 * how long" — the whole run, not only the wait before the
+                 * first word. The Claude Code shape the owner pointed at. */}
+                {busy && chat.viewing === 0 ? (
+                  <MessageScrollerItem key="activity">
+                    <ActivityLine since={chat.since} label={activity} />
+                  </MessageScrollerItem>
+                ) : null}
               </MessageScrollerContent>
             </MessageScrollerViewport>
             <MessageScrollerButton />
@@ -1356,6 +1384,34 @@ export function AgentWorkspace(props: {
                           : t('room.free')}
                   </span>
                   <span className="ml-auto flex items-center gap-1">
+                    {/* Capture lives HERE and not in the top bar because in
+                     * this mode the result lands here: the server writes the
+                     * file, offers it on the files channel, and the delivery
+                     * effect above opens it as the canvas view. Neither verb
+                     * needs the controls — capturing is not driving. */}
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      onClick={() => d.sendInput({ t: 'capture', action: 'shot' })}
+                      title={t('ws.shot')}
+                    >
+                      <IconCamera />
+                    </Button>
+                    {d.recording ? <RecClock since={d.recordingSince} /> : null}
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      className={cn(d.recording && 'text-red-500 hover:text-red-500')}
+                      onClick={() =>
+                        d.sendInput({
+                          t: 'capture',
+                          action: d.recording ? 'rec_stop' : 'rec_start',
+                        })
+                      }
+                      title={t(d.recording ? 'ws.recStop' : 'ws.rec')}
+                    >
+                      {d.recording ? <IconPlayerStopFilled /> : <IconPlayerRecordFilled />}
+                    </Button>
                     <Button size="xs" variant={yours ? 'outline' : 'default'} onClick={d.toggleControl}>
                       {yours ? t('room.release') : t('room.take')}
                     </Button>
@@ -1380,6 +1436,22 @@ export function AgentWorkspace(props: {
                           : `${Math.max(1, Math.round(m.size / 1024))} KB`}
                       </span>
                       <span className="ml-auto flex items-center gap-1">
+                        {/* A recording does not pause because somebody looked
+                         * at a screenshot; the stop stays reachable. */}
+                        {d.recording ? (
+                          <>
+                            <RecClock since={d.recordingSince} />
+                            <Button
+                              size="icon-xs"
+                              variant="ghost"
+                              className="text-red-500 hover:text-red-500"
+                              onClick={() => d.sendInput({ t: 'capture', action: 'rec_stop' })}
+                              title={t('ws.recStop')}
+                            >
+                              <IconPlayerStopFilled />
+                            </Button>
+                          </>
+                        ) : null}
                         <Button size="xs" variant="outline" onClick={() => downloadMedia(m)}>
                           <IconDownload />
                           {t('ws.download')}
@@ -1517,6 +1589,7 @@ export function AgentWorkspace(props: {
               {label}
             </div>
           ))}
+          <TaskClock worked={chat.worked} since={chat.since} />
           {busy ? (
             <div className="mt-1 text-xs text-[var(--sd-drive)]">{t('chat.working')}</div>
           ) : null}
@@ -1608,6 +1681,73 @@ export function AgentWorkspace(props: {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+/* The activity line: one glowing mark, the running clock, and what the run
+ * is doing right now — a tool's name while one is in flight, "waiting for
+ * the agent" between them. Lives at the FOOT of the thread for the whole
+ * run, the way Claude Code's own status line does; the folded Tools rows
+ * above it stay quiet. */
+function ActivityLine(props: { since: number; label: string }) {
+  const { t } = useTranslation()
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const clock = props.since ? fmtDur(Date.now() - props.since) : ''
+  return (
+    <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground" role="status">
+      <span className="animate-pulse text-sm leading-none text-[var(--sd-drive)]">✳</span>
+      {clock ? <span className="tabular-nums">{clock}</span> : null}
+      <span className="min-w-0 truncate">
+        {clock ? '· ' : ''}
+        {props.label ? (
+          <span className="font-mono text-[11px]">{props.label}</span>
+        ) : (
+          t('ws.waiting')
+        )}
+      </span>
+    </div>
+  )
+}
+
+/* The session's clock, under turns/tools/tokens: finished exchanges plus the
+ * one in flight, ticking while it runs — so "how long has this taken" has an
+ * answer at every moment, not only at the end. */
+function TaskClock(props: { worked: number; since: number }) {
+  const { t } = useTranslation()
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (!props.since) return
+    const id = setInterval(() => tick((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [props.since])
+  const total = props.worked + (props.since ? Date.now() - props.since : 0)
+  if (!total) return null
+  return (
+    <div className="py-1 text-xs text-muted-foreground">
+      {t('chat.elapsed', { v: fmtDur(total) })}
+    </div>
+  )
+}
+
+/* The recording clock, the canvas header's size: mm:ss in red beside the
+ * stop button, ticking on its own so the header does not re-render around
+ * it. The top bar has its twin; this one exists because in Agent mode the
+ * top bar's tools are not on screen. */
+function RecClock(props: { since: number }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 500)
+    return () => clearInterval(id)
+  }, [])
+  const s = Math.max(0, Math.floor((Date.now() - props.since) / 1000))
+  return (
+    <span className="font-mono text-[10.5px] tabular-nums text-red-500">
+      {String(Math.floor(s / 60)).padStart(2, '0')}:{String(s % 60).padStart(2, '0')}
+    </span>
   )
 }
 

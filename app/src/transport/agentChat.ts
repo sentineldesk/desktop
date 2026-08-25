@@ -92,6 +92,9 @@ export interface AgentEnding {
    * button. Empty when the agent simply finished — which is the distinction
    * that decides whether the footer is neutral or a warning. */
   readonly stoppedBy: string
+  /** How long the exchange ran, in ms as this panel measured it. Zero on a
+   * restored transcript — the wire does not carry it. */
+  readonly ms: number
 }
 
 /** One bubble. */
@@ -161,6 +164,9 @@ export interface AgentChatState {
    *  the panel, telling somebody who reopened it that a four-minute run had
    *  just begun. */
   readonly since: number
+  /** Total ms of finished exchanges this session — the clock's resting value.
+   * Add `now - since` while busy for the live total. */
+  readonly worked: number
   readonly sessions: readonly AgentSession[]
   /** Which past conversation is on screen, or 0 for the live one. */
   readonly viewing: number
@@ -272,7 +278,20 @@ export function useAgentChat(send: (event: Record<string, unknown>) => void): Ag
   const [agent, setAgent] = useState<AgentAvailability>(agentUnknown)
   const [messages, setMessages] = useState<readonly AgentMessage[]>([])
   const [busy, setBusyState] = useState('')
-  const [since, setSince] = useState(0)
+  const [since, setSinceState] = useState(0)
+  /* Time actually spent working this session, summed exchange by exchange —
+   * what the sidebar's clock shows once a task ends. Mirrored in a ref for
+   * the same reason busyRef exists: agent_end must add THIS exchange's span
+   * to the total from inside a DataChannel callback. */
+  const [worked, setWorked] = useState(0)
+  const sinceRef = useRef(0)
+  const setSince = useCallback((v: number | ((prev: number) => number)) => {
+    setSinceState((prev) => {
+      const next = typeof v === 'function' ? v(prev) : v
+      sinceRef.current = next
+      return next
+    })
+  }, [])
   /* Mirrored in a ref because handle() runs from a DataChannel callback that
    * closed over its render, and the question it has to answer — "is this chat
    * running right now" — must be about NOW, not about whenever this callback
@@ -550,6 +569,11 @@ export function useAgentChat(send: (event: Record<string, unknown>) => void): Ag
     if (t === 'agent_delta') {
       const text = str(m.text)
       if (!text) return
+      /* The clock starts when this panel SEES work, not only when it asked
+       * for it — a run started from the terminal or another browser ticks
+       * here all the same. `|| was` keeps the true start on the panel that
+       * did ask. */
+      setSince((was) => was || Date.now())
       appendLive((cur) => {
         const i = lastIndex(cur, chat, 'agent')
         /* Appended to the open bubble, or a new one. The join is a blank line
@@ -588,6 +612,7 @@ export function useAgentChat(send: (event: Record<string, unknown>) => void): Ag
         detail: str(m.detail),
         turn: num(m.turn),
       }
+      setSince((was) => was || Date.now())
       const running = isRunning(chat, busyRef.current)
       appendLive((cur) => {
         const i = lastIndex(cur, chat, 'agent')
@@ -643,6 +668,9 @@ export function useAgentChat(send: (event: Record<string, unknown>) => void): Ag
     }
 
     if (t === 'agent_end') {
+      /* How long the exchange ran, measured before the clock resets. The
+       * wire does not carry it, and does not need to: this panel watched. */
+      const ms = sinceRef.current ? Date.now() - sinceRef.current : 0
       const ending: AgentEnding = {
         ok: m.ok === true,
         text: str(m.text),
@@ -651,7 +679,9 @@ export function useAgentChat(send: (event: Record<string, unknown>) => void): Ag
         inToks: num(m.in_toks),
         outToks: num(m.out_toks),
         stoppedBy: str(m.stopped_by),
+        ms,
       }
+      if (ms) setWorked((w) => w + ms)
       setBusy((b) => (b === chat ? '' : b))
       setSince(0)
       appendLive((cur) => {
@@ -740,6 +770,7 @@ export function useAgentChat(send: (event: Record<string, unknown>) => void): Ag
     setViewing(0)
     setBusy('')
     setSince(0)
+    setWorked(0)
     setMessages([])
   }, [])
 
@@ -814,6 +845,7 @@ export function useAgentChat(send: (event: Record<string, unknown>) => void): Ag
     messages,
     busy,
     since,
+    worked,
     sessions,
     viewing,
     denied,
