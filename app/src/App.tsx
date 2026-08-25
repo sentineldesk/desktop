@@ -121,8 +121,10 @@ export function App() {
    * restarted server reads exactly like a wrong password — and drop back to
    * the form with the reason on it. */
   const loginFailed = desktop.state === 'failed' && desktop.error === 'login.failed'
+  const [loginError, setLoginError] = useState(false)
   useEffect(() => {
     if (loginFailed) {
+      setLoginError(true)
       sessionStorage.removeItem('sentineldesk_token')
       setAuth(null)
     }
@@ -418,8 +420,11 @@ export function App() {
 
         {showLogin ? (
           <Login
-            error={loginFailed ? t('login.failed') : ''}
-            onSubmit={(user, pass) => setAuth({ user, pass })}
+            error={loginError ? t('login.failed') : ''}
+            onSubmit={(user, pass) => {
+              setLoginError(false)
+              setAuth({ user, pass })
+            }}
           />
         ) : null}
 
