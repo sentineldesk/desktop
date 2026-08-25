@@ -521,28 +521,16 @@ function SessionRow(props: {
             <IconDownload />
             {t('chat.export')}
           </DropdownMenuItem>
-          {!s.live ? (
-            <DropdownMenuItem
-              className="gap-2 px-2 py-1.5"
-              variant="destructive"
-              onClick={props.onForget}
-            >
-              <IconTrash />
-              {t('chat.forgetOne')}
-            </DropdownMenuItem>
-          ) : (
-            /* Shown but disabled on the live row, with the why in the tip.
-             * Absent, the button reads as missing; present and refused, it
-             * reads as a rule — the engine is still writing to this one. */
-            <DropdownMenuItem
-              className="gap-2 px-2 py-1.5"
-              disabled
-              title={t('chat.forgetAllKeepsLive')}
-            >
-              <IconTrash />
-              {t('chat.forgetOne')}
-            </DropdownMenuItem>
-          )}
+          {/* The live row deletes like any other: the runtime stops what is
+           * running, leaves a blank conversation, and drops the record. */}
+          <DropdownMenuItem
+            className="gap-2 px-2 py-1.5"
+            variant="destructive"
+            onClick={props.onForget}
+          >
+            <IconTrash />
+            {t('chat.forgetOne')}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -1428,6 +1416,12 @@ export function AgentWorkspace(props: {
                     <Button
                       size="icon-xs"
                       variant="ghost"
+                      className={cn(
+                        /* Green while sound is ON — the top bar's `live`
+                         * state, spoken in this header's dialect. */
+                        !props.muted &&
+                          'text-[var(--sd-drive)] hover:text-[var(--sd-drive)]',
+                      )}
                       onClick={props.onAudio}
                       title={t('toolbar.audio')}
                     >

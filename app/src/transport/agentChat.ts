@@ -482,6 +482,13 @@ export function useAgentChat(send: (event: Record<string, unknown>) => void): Ag
           streamed: false,
         }))
         if (str(m.chat)) chatRef.current = str(m.chat)
+        /* An EMPTY live transcript is a conversation that was deleted from
+         * under every face — a fresh start, so the clocks start fresh too. */
+        if (restored.length === 0) {
+          setBusy('')
+          setSince(0)
+          setWorked(0)
+        }
         liveRef.current = restored
         viewingRef.current = 0
         setViewing(0)
