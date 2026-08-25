@@ -311,5 +311,6 @@
   "ws.live": "En vivo",
   "ws.download": "Descargar",
   "ws.remove": "Quitar",
-  "ws.tools": "Herramientas"
+  "ws.tools": "Herramientas",
+  "ws.rename": "Renombrar"
 }

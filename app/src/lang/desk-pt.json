@@ -311,5 +311,6 @@
   "ws.live": "Ao vivo",
   "ws.download": "Baixar",
   "ws.remove": "Remover",
-  "ws.tools": "Ferramentas"
+  "ws.tools": "Ferramentas",
+  "ws.rename": "Renomear"
 }

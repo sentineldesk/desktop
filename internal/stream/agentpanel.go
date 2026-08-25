@@ -224,6 +224,10 @@ type AgentDesk interface {
 	// of them. The answer is the refreshed list, arriving the History way.
 	Forget(session int, all bool) error
 
+	// Rename gives one conversation the person's own name; empty clears it.
+	// The answer is the refreshed list, arriving the History way.
+	Rename(session int, title string) error
+
 	// Export asks for one past conversation as a whole document.
 	Export(session int, format string) error
 
@@ -371,6 +375,16 @@ type AgentHistoryTurn struct {
 	Role string `json:"role"`
 	Text string `json:"text"`
 	At   string `json:"at,omitempty"`
+
+	// Steps is the turn's tool calls, one entry each plus results, so the
+	// panel folds a restored conversation the way it folds the live one.
+	Steps []AgentHistoryStep `json:"steps,omitempty"`
+}
+
+// AgentHistoryStep is one tool call, or its result, inside a transcript turn.
+type AgentHistoryStep struct {
+	Tool   string `json:"tool"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // AgentHistory delivers either the list of conversations or one transcript.

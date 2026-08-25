@@ -793,7 +793,7 @@ func (s *Session) handleInput(ev inputEvent) {
 		s.room.AnswerQuestion(ev.ReqID, ev.Answer)
 		return
 
-	case "agent_say", "agent_cancel", "agent_history", "agent_export",
+	case "agent_say", "agent_cancel", "agent_history", "agent_export", "agent_rename",
 		"agent_console_open", "agent_console_data", "agent_console_resize",
 		"agent_console_close":
 		// The chat panel. Handled above the control check on purpose: talking to
@@ -1421,6 +1421,13 @@ func (s *Session) handleAgentPanel(ev inputEvent) {
 
 	case "agent_history":
 		if err := desk.History(ev.Session); err != nil {
+			s.sendAgentStatus(desk.Availability())
+		}
+
+	case "agent_rename":
+		// Naming is tidying the shared ledger, not driving the desktop, so it
+		// sits with history rather than behind the controls.
+		if err := desk.Rename(ev.Session, ev.Text); err != nil {
 			s.sendAgentStatus(desk.Availability())
 		}
 

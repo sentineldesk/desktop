@@ -198,6 +198,13 @@ func (c *Chat) History(session int) error {
 	if session > 0 {
 		return c.link.Send(Envelope{T: TypeTranscript, Session: session})
 	}
+	// Negative asks for the conversation the runtime is IN — transcript 0 on
+	// the wire, the same frame a terminal requests when it attaches. It is
+	// what lets a reloaded browser find the conversation still there instead
+	// of an empty thread wearing a live badge.
+	if session < 0 {
+		return c.link.Send(Envelope{T: TypeTranscript, Session: 0})
+	}
 	return c.link.Send(Envelope{T: TypeSessions})
 }
 
@@ -218,6 +225,16 @@ func (c *Chat) Forget(session int, all bool) error {
 		return fmt.Errorf("there is no session %d to forget", session)
 	}
 	return c.link.Send(Envelope{T: TypeForget, Session: session})
+}
+
+// Rename gives one past (or the live) conversation the person's own name.
+// Like Forget, it sends and returns: the runtime answers with the refreshed
+// sessions list, to every panel in the room.
+func (c *Chat) Rename(session int, title string) error {
+	if session <= 0 {
+		return fmt.Errorf("there is no session %d to rename", session)
+	}
+	return c.link.Send(Envelope{T: TypeRename, Session: session, Text: title})
 }
 
 // statusChanged is the link's callback. It republishes availability and, when
@@ -473,8 +490,13 @@ func (c *Chat) fromRuntime(m Envelope) {
 		// says which one that is in Chat.
 		msgs := make([]stream.AgentHistoryTurn, 0, len(m.Messages))
 		for _, h := range m.Messages {
+			steps := make([]stream.AgentHistoryStep, 0, len(h.Steps))
+			for _, st := range h.Steps {
+				steps = append(steps, stream.AgentHistoryStep{
+					Tool: st.Tool, Detail: st.Detail})
+			}
 			msgs = append(msgs, stream.AgentHistoryTurn{
-				Role: h.Role, Text: h.Text, At: h.At})
+				Role: h.Role, Text: h.Text, At: h.At, Steps: steps})
 		}
 		c.panel.AgentHistory(m.Session, m.Chat, nil, msgs)
 

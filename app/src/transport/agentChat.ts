@@ -175,6 +175,21 @@ export interface AgentChatState {
 type Wire = Record<string, unknown>
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
+
+/* The steps a transcript turn carried — the runtime attaches its tool calls
+ * so a restored conversation folds the same way the live one did. Keys come
+ * from their own counter: the hook's message counter is out of reach here
+ * and these only have to be unique among themselves. */
+let restoredStepSeq = 0
+function stepsOf(h: Wire): AgentStep[] {
+  if (!Array.isArray(h.steps)) return []
+  return (h.steps as Wire[]).map((st) => ({
+    key: `ts${++restoredStepSeq}`,
+    tool: str(st.tool),
+    detail: str(st.detail),
+    turn: 0,
+  }))
+}
 const num = (v: unknown): number => (typeof v === 'number' && isFinite(v) ? v : 0)
 
 /** Every `t` this module claims. useDesktopStream routes on it, so a type
@@ -203,6 +218,12 @@ export interface AgentChatApi extends AgentChatState {
   reset(): void
   /** Ask the runtime for the list of past conversations. */
   loadSessions(): void
+  /** Ask for the conversation the runtime is IN — what re-fills the thread
+   * after a reload found it empty while the roster still marked a live row. */
+  hydrate(): void
+  /** Give one conversation the person's own name; empty clears it. The
+   * runtime answers with the refreshed list, to every panel. */
+  rename(id: number, title: string): void
   /** Show one past conversation, or 0 to come back to the live one. */
   openSession(id: number): void
   /** resume continues a past conversation, for every face at once. */
@@ -437,7 +458,7 @@ export function useAgentChat(send: (event: Record<string, unknown>) => void): Ag
           text: str(h.text),
           at: 0,
           streaming: false,
-          steps: [],
+          steps: stepsOf(h),
           ending: null,
           streamed: false,
         }))
@@ -460,7 +481,7 @@ export function useAgentChat(send: (event: Record<string, unknown>) => void): Ag
           text: str(h.text),
           at: 0,
           streaming: false,
-          steps: [],
+          steps: stepsOf(h),
           ending: null,
           streamed: false,
         }))
@@ -722,6 +743,17 @@ export function useAgentChat(send: (event: Record<string, unknown>) => void): Ag
     setMessages([])
   }, [])
 
+  const hydrate = useCallback(() => {
+    send({ t: 'agent_history', session: -1 })
+  }, [send])
+
+  const rename = useCallback(
+    (id: number, title: string) => {
+      if (id > 0) send({ t: 'agent_rename', session: id, text: title })
+    },
+    [send],
+  )
+
   const loadSessions = useCallback(() => {
     send({ t: 'agent_history', session: 0 })
   }, [send])
@@ -790,6 +822,8 @@ export function useAgentChat(send: (event: Record<string, unknown>) => void): Ag
     stop,
     reset,
     loadSessions,
+    hydrate,
+    rename,
     openSession,
     resume,
     forget,

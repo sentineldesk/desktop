@@ -311,5 +311,6 @@
   "ws.live": "即時",
   "ws.download": "下載",
   "ws.remove": "移除",
-  "ws.tools": "工具"
+  "ws.tools": "工具",
+  "ws.rename": "重新命名"
 }

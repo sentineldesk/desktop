@@ -33,7 +33,9 @@ import { useTranslation } from 'react-i18next'
 import {
   IconArrowRight,
   IconBox,
+  IconCheck,
   IconChevronRight,
+  IconCopy,
   IconChevronUp,
   IconDeviceDesktop,
   IconDots,
@@ -43,6 +45,7 @@ import {
   IconLanguage,
   IconLogout,
   IconMoon,
+  IconPencil,
   IconPhoto,
   IconPlayerPlayFilled,
   IconPlayerStopFilled,
@@ -266,9 +269,7 @@ function Tools({
                   ) : null}
                 </summary>
                 {step.detail ? (
-                  <pre className="mx-3 mb-2 max-h-64 overflow-auto rounded-md bg-background p-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
-                    {step.detail}
-                  </pre>
+                  <DetailWell text={step.detail} />
                 ) : (
                   <div className="mx-3 mb-2 text-[11px] text-muted-foreground">—</div>
                 )}
@@ -277,6 +278,135 @@ function Tools({
           })}
         </div>
       ) : null}
+    </div>
+  )
+}
+
+/* ---- the well's contents --------------------------------------------------
+
+   A call's output is JSON more often than not, and grey minified JSON reads
+   as noise. When the detail parses it is pretty-printed and painted the way
+   the owner's editor paints it — a line-number gutter, gold braces, sky-blue
+   keys, salmon strings, sage numbers. Anything that does not parse (prose,
+   truncated args) stays as it came. */
+const JSON_TOKEN =
+  /("(?:[^"\\]|\\.)*")(\s*:)?|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|\b(true|false|null)\b|([{}\[\]])/g
+
+function paintLine(line: string, keyBase: number): React.ReactNode[] {
+  const out: React.ReactNode[] = []
+  let at = 0
+  let k = keyBase
+  let m: RegExpExecArray | null
+  JSON_TOKEN.lastIndex = 0
+  while ((m = JSON_TOKEN.exec(line)) !== null) {
+    if (m.index > at) out.push(line.slice(at, m.index))
+    if (m[1] !== undefined) {
+      if (m[2] !== undefined) {
+        out.push(
+          <span key={k++} className="text-[#0451a5] dark:text-[#9cdcfe]">
+            {m[1]}
+          </span>,
+          m[2],
+        )
+      } else {
+        out.push(
+          <span key={k++} className="text-[#a31515] dark:text-[#ce9178]">
+            {m[1]}
+          </span>,
+        )
+      }
+    } else if (m[3] !== undefined) {
+      out.push(
+        <span key={k++} className="text-[#098658] dark:text-[#b5cea8]">
+          {m[3]}
+        </span>,
+      )
+    } else if (m[4] !== undefined) {
+      out.push(
+        <span key={k++} className="text-[#0000ff] dark:text-[#569cd6]">
+          {m[4]}
+        </span>,
+      )
+    } else if (m[5] !== undefined) {
+      out.push(
+        <span key={k++} className="text-[#795e26] dark:text-[#ffd700]">
+          {m[5]}
+        </span>,
+      )
+    }
+    at = JSON_TOKEN.lastIndex
+  }
+  out.push(line.slice(at))
+  return out
+}
+
+function DetailWell({ text }: { text: string }) {
+  const { t } = useTranslation()
+  const [copied, setCopied] = useState(false)
+  let value: unknown
+  try {
+    value = JSON.parse(text.trim())
+  } catch {
+    value = undefined
+  }
+  const parsed = typeof value === 'object' && value !== null
+  const pretty = parsed ? JSON.stringify(value, null, 2) : text
+
+  const copy = () => {
+    void navigator.clipboard
+      ?.writeText(pretty)
+      .then(() => {
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 1600)
+      })
+      .catch(() => {})
+  }
+
+  const copyBtn = (
+    <button
+      type="button"
+      onClick={copy}
+      title={copied ? t('chat.copied') : t('chat.copy')}
+      className="absolute top-1.5 right-1.5 rounded-md border bg-card p-1 text-muted-foreground opacity-0 transition-opacity group-hover/well:opacity-100 hover:text-foreground focus-visible:opacity-100"
+    >
+      {copied ? (
+        <IconCheck className="size-3.5 text-[var(--sd-drive)]" />
+      ) : (
+        <IconCopy className="size-3.5" />
+      )}
+    </button>
+  )
+
+  if (!parsed) {
+    return (
+      <div className="group/well relative mx-3 mb-2">
+        <pre className="max-h-64 overflow-auto rounded-md bg-background p-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
+          {text}
+        </pre>
+        {copyBtn}
+      </div>
+    )
+  }
+  const lines = pretty.split('\n')
+  const gutter = String(lines.length).length
+  return (
+    <div className="group/well relative mx-3 mb-2">
+      <div className="max-h-64 overflow-auto rounded-md bg-background py-2 font-mono text-[11px] leading-relaxed">
+        {lines.map((line, i) => (
+          <div key={i} className="flex px-2.5">
+            <span
+              className="shrink-0 pr-3 text-right text-muted-foreground/50 select-none"
+              style={{ minWidth: `${gutter + 1}ch` }}
+            >
+              {i + 1}
+            </span>
+            <span className="min-w-0 whitespace-pre-wrap text-foreground/80">
+              {paintLine(line, i * 100)}
+            </span>
+          </div>
+        ))}
+      </div>
+      {copyBtn}
     </div>
   )
 }
@@ -296,13 +426,40 @@ function titleHue(text: string): number {
 function SessionRow(props: {
   session: AgentSession
   on: boolean
+  editing: boolean
   onOpen(): void
   onResume(): void
   onExport(): void
   onForget(): void
+  onRename(): void
+  onRenamed(title: string): void
 }) {
   const { t } = useTranslation()
   const s = props.session
+
+  if (props.editing) {
+    return (
+      <div className="flex w-full items-center gap-2.5 rounded-lg bg-foreground/5 px-2 py-2">
+        <span
+          className="size-7 shrink-0 rounded-full"
+          style={{
+            background: `linear-gradient(140deg, hsl(${titleHue(s.title)} 38% 38%), hsl(${(titleHue(s.title) + 45) % 360} 55% 55%))`,
+          }}
+        />
+        <input
+          autoFocus
+          defaultValue={s.title}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') props.onRenamed((e.target as HTMLInputElement).value)
+            if (e.key === 'Escape') props.onRenamed('')
+            e.stopPropagation()
+          }}
+          onBlur={(e) => props.onRenamed(e.target.value)}
+          className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-[13px] outline-none focus:border-ring"
+        />
+      </div>
+    )
+  }
   return (
     <div
       className={cn(
@@ -349,6 +506,10 @@ function SessionRow(props: {
           <IconDots />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="p-1.5">
+          <DropdownMenuItem className="gap-2 px-2 py-1.5" onClick={props.onRename}>
+            <IconPencil />
+            {t('ws.rename')}
+          </DropdownMenuItem>
           {!s.live ? (
             <DropdownMenuItem className="gap-2 px-2 py-1.5" onClick={props.onResume}>
               <IconArrowRight />
@@ -400,6 +561,8 @@ export function AgentWorkspace(props: {
   const [wipe, setWipe] = useState(false)
   const [copied, setCopied] = useState(false)
   const [commandsOpen, setCommandsOpen] = useState(false)
+  /* Which session row is being renamed, if any. */
+  const [renaming, setRenaming] = useState(0)
   const [userOpen, setUserOpen] = useState(false)
   const [langOpen, setLangOpen] = useState(false)
   const [panelOpen, setPanelOpen] = useState(
@@ -554,6 +717,21 @@ export function AgentWorkspace(props: {
     chat.loadSessions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busy])
+
+  /* A reloaded browser used to show an empty thread while the roster still
+   * marked a live conversation — the words were in the runtime all along.
+   * Once per connection, an empty live thread asks to be re-filled. */
+  const hydrated = useRef(false)
+  useEffect(() => {
+    if (!agent.ready) {
+      hydrated.current = false
+      return
+    }
+    if (hydrated.current) return
+    hydrated.current = true
+    if (chat.messages.length === 0 && chat.viewing === 0) chat.hydrate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.ready])
 
   /* The composer grows with the text, up to the cap below. Measured rather
    * than counted in rows, because a pasted paragraph and five short lines are
@@ -782,10 +960,19 @@ export function AgentWorkspace(props: {
                 key={s.id}
                 session={s}
                 on={s.live ? chat.viewing === 0 : chat.viewing === s.id}
+                editing={renaming === s.id}
                 onOpen={() => chat.openSession(s.live ? 0 : s.id)}
                 onResume={() => chat.resume(s.id)}
                 onExport={() => chat.exportSession(s.id)}
                 onForget={() => chat.forget(s.id)}
+                onRename={() => setRenaming(s.id)}
+                onRenamed={(title) => {
+                  setRenaming(0)
+                  const clean = title.trim()
+                  /* Escape (empty) keeps the old name; an unchanged name is
+                   * not a request. */
+                  if (clean && clean !== s.title) chat.rename(s.id, clean)
+                }}
               />
             ))
           )}

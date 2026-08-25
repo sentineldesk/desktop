@@ -81,6 +81,11 @@ const (
 	// database whose whole point is that it has one.
 	TypeForget = "forget"
 
+	// TypeRename gives one session a name the person chose. Session says
+	// which; Text carries the name, empty to clear back to the derived one.
+	// The runtime answers with the refreshed sessions list, to everyone.
+	TypeRename = "rename"
+
 	// TypeExport asks for one past conversation as a whole document, and carries
 	// the document back.
 	//
@@ -355,6 +360,17 @@ type HistoryTurn struct {
 	Role string `json:"role"` // human | agent | system
 	Text string `json:"text"`
 	At   string `json:"at,omitempty"`
+
+	// Steps is what the turn DID — the runtime attaches one entry per tool
+	// call (and its result) so a restored conversation shows its work the way
+	// the live stream did. Passed through untouched.
+	Steps []HistoryStep `json:"steps,omitempty"`
+}
+
+// HistoryStep is one tool call, or its result, inside a transcript turn.
+type HistoryStep struct {
+	Tool   string `json:"tool"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // encode renders one message for the wire, newline included.
