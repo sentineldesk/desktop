@@ -20,6 +20,8 @@ import { defineConfig } from 'vite'
 // The build lands straight in the Go embed directory: `make app` (and the
 // image's node stage) produce internal/webui/assets, and the binary carries
 // the result. One artifact, no copy step to forget.
+let outDir = ''
+
 export default defineConfig({
   plugins: [
     react(),
@@ -29,13 +31,22 @@ export default defineConfig({
        * is what lets a fresh clone's go:embed compile before npm has ever
        * run. Put it back as the last act of the build instead of trusting
        * every caller to remember (the Makefile did; `npm run build` alone
-       * did not). */
+       * did not).
+       *
+       * Into the RESOLVED outDir, not a path assumed from the repo layout:
+       * the image's node stage builds with `--outDir /out`, where
+       * `../internal` does not exist, and a hardcoded path took `make
+       * image` down with ENOENT. A stray keep-file in /out is harmless. */
       name: 'restore-gitkeep',
+      configResolved(config) {
+        outDir = config.build.outDir
+      },
       closeBundle() {
-        fs.writeFileSync(
-          path.resolve(import.meta.dirname, '../internal/webui/assets/.gitkeep'),
-          '',
-        )
+        try {
+          fs.writeFileSync(path.resolve(outDir, '.gitkeep'), '')
+        } catch {
+          /* nothing to keep alive where this build landed */
+        }
       },
     },
   ],
