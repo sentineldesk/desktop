@@ -52,6 +52,7 @@ import { Kbd } from './ui/Kbd'
 import { useDraggable } from './ui/useDraggable'
 import { TopBar, type ShellMode } from './ui/TopBar'
 import { AboutDialog } from './ui/AboutDialog'
+import { NameGate } from './ui/NameGate'
 
 /* ---- the logo, shared by the boot screen and the login ------------------- */
 
@@ -300,8 +301,15 @@ export function App() {
 
   const langCode = i18n.language || 'en'
   const live = desktop.state === 'live'
+  /* The name gate: after the door, before the desktop. Once per TAB session
+   * — the same lifetime as the login token, so an F5 goes straight in while
+   * a fresh tab asks again, remembered name already in the field. */
+  const [named, setNamed] = useState(
+    () => sessionStorage.getItem('sentineldesk.named') === '1',
+  )
   const showLogin = authRequired === true && auth === null
-  const showStatus = !live && !showLogin
+  const showNameGate = !showLogin && auth !== null && !named
+  const showStatus = !live && !showLogin && !showNameGate
 
   const fmt = (s: number) =>
     `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
@@ -443,6 +451,23 @@ export function App() {
             onSubmit={(user, pass) => {
               setLoginError(false)
               setAuth({ user, pass })
+            }}
+          />
+        ) : null}
+
+        {showNameGate ? (
+          <NameGate
+            stored={name}
+            onDone={(n) => {
+              sessionStorage.setItem('sentineldesk.named', '1')
+              setNamed(true)
+              /* The connection may already be up under the gate, carrying
+               * the OLD name in its auth frame — the rename event is what
+               * moves the room to the new one, the same wire Settings uses. */
+              if (n !== name) {
+                setName(n)
+                desktop.sendInput({ t: 'rename', name: n })
+              }
             }}
           />
         ) : null}
