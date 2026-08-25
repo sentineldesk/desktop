@@ -1,2 +1,2 @@
-initial_version: 0.6.6
-git_hash: 017c287
+initial_version: 0.6.7
+git_hash: 43c1ec6
