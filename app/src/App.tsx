@@ -302,22 +302,31 @@ export function App() {
    * Only while driving: a resize arrow over a desktop you cannot resize is a
    * promise. */
   const screenEl = (
-    <video
-      id="screen"
-      ref={bindVideo}
-      autoPlay
-      playsInline
-      muted={muted || policyMuted}
-      tabIndex={0}
-      style={{
-        visibility: live ? 'visible' : 'hidden',
-        cursor:
-          desktop.control.yours && desktop.cursor ? desktop.cursor : undefined,
-      }}
-    />
+    <>
+      <video
+        id="screen"
+        ref={bindVideo}
+        autoPlay
+        playsInline
+        muted={muted || policyMuted}
+        tabIndex={0}
+        style={{
+          visibility: live ? 'visible' : 'hidden',
+          cursor:
+            desktop.control.yours && desktop.cursor ? desktop.cursor : undefined,
+        }}
+      />
+      {live && !desktop.control.yours && desktop.pointer ? (
+        <RemotePointer
+          videoRef={videoRef}
+          pointer={desktop.pointer}
+          name={desktop.control.holder ?? ''}
+          agent={desktop.control.holderIsAgent}
+          color={desktop.members.find((m) => m.controller)?.color}
+        />
+      ) : null}
+    </>
   )
-
-  const showDesktopSurface = live && (mode === 'desktop' || expanded)
 
   return (
     <div className="shell">
@@ -382,16 +391,6 @@ export function App() {
         ) : (
           <div id="stage-desktop">{live || showStatus ? screenEl : null}</div>
         )}
-
-        {live && showDesktopSurface && !desktop.control.yours && desktop.pointer ? (
-          <RemotePointer
-            videoRef={videoRef}
-            pointer={desktop.pointer}
-            name={desktop.control.holder ?? ''}
-            agent={desktop.control.holderIsAgent}
-            color={desktop.members.find((m) => m.controller)?.color}
-          />
-        ) : null}
 
         {showStatus ? (
           <div id="status" className="visible">

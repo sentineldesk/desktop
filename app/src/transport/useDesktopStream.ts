@@ -331,6 +331,22 @@ const HANDSHAKE_TIMEOUT_MS = 30_000
  * disk instead of ballooning in a tab's memory. */
 const AUTO_SAVE_LIMIT = 256 * 1024 * 1024
 
+
+/* Whether this browser takes image-set() inside cursor, and under which
+ * spelling. Probed once: a cursor list with one unparseable entry is dropped
+ * WHOLE, so guessing wrong costs the pointer entirely. */
+const IMAGE_SET = (() => {
+  try {
+    for (const fn of ['image-set', '-webkit-image-set']) {
+      if (CSS.supports('cursor', `${fn}(url("data:,") 2x) 0 0, default`)) return fn
+    }
+  } catch {
+    /* no CSS.supports: ancient — plain bitmaps only */
+  }
+  return ''
+})()
+const HIDPI_CURSORS = IMAGE_SET !== ''
+
 export function useDesktopStream(
   auth: StandaloneAuth | null,
   name: string,
@@ -1423,6 +1439,8 @@ export function useDesktopStream(
                 d?: string
                 x?: number
                 y?: number
+                w?: number
+                h?: number
                 you?: string
                 paused?: boolean
                 pausedBy?: string
@@ -1620,8 +1638,21 @@ export function useDesktopStream(
                   if (!roster.some((member) => member.id === id)) dropVoicePeer(id)
                 }
               } else if (m.t === 'cursor') {
-                /* The real X cursor shape, as a PNG with its hotspot. */
-                setCursor(m.d ? `url(${m.d}) ${m.x ?? 0} ${m.y ?? 0}, default` : null)
+                /* The real X cursor shape, as a PNG with its hotspot. A big
+                 * bitmap (the 48px cursors XCURSOR_SIZE=48 hands out) is
+                 * declared 2x so a Retina screen draws it crisp at 24 CSS px
+                 * instead of stretching a 24px one into mush; the hotspot
+                 * scales with it. Browsers without image-set on cursors fall
+                 * through to the plain url() at native size, then default. */
+                if (!m.d) {
+                  setCursor(null)
+                } else if ((m.w ?? 0) >= 40 && HIDPI_CURSORS) {
+                  const hx = Math.round((m.x ?? 0) / 2)
+                  const hy = Math.round((m.y ?? 0) / 2)
+                  setCursor(`${IMAGE_SET}(url(${m.d}) 2x) ${hx} ${hy}, default`)
+                } else {
+                  setCursor(`url(${m.d}) ${m.x ?? 0} ${m.y ?? 0}, default`)
+                }
               } else if (m.t === 'pointer') {
                 /* The real cursor's position, for the viewer overlay. */
                 setPointer({ x: m.x ?? 0, y: m.y ?? 0 })

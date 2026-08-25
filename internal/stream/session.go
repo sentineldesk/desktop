@@ -693,6 +693,7 @@ func (s *Session) sendCursor(channel *webrtc.DataChannel, state desktop.CursorSt
 	}
 	payload, err := json.Marshal(map[string]any{
 		"t": "cursor", "d": state.DataURL, "x": state.HotX, "y": state.HotY,
+		"w": state.Width, "h": state.Height,
 	})
 	if err == nil {
 		channel.SendText(string(payload))

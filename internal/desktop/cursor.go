@@ -30,6 +30,11 @@ type CursorState struct {
 	DataURL string
 	HotX    int
 	HotY    int
+	// The bitmap's edge, so a client can tell a 24px shape from a 48px one
+	// and label the big ones 2x — a Retina browser otherwise stretches the
+	// small bitmap and the pointer arrives looking chewed.
+	Width  int
+	Height int
 }
 
 // CursorTracker follows X cursor-shape changes (the XFixes extension) and
@@ -100,16 +105,33 @@ func (t *CursorTracker) refresh(conn *xgb.Conn) {
 		return
 	}
 
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	// X gives premultiplied ARGB, and PNG stores STRAIGHT alpha — and
+	// png.Encode's fast path for *image.RGBA copies the bytes raw rather
+	// than unpremultiplying. Fed premultiplied data, every semi-transparent
+	// pixel came out darkened: a cursor with an antialiased edge grew black
+	// fringes, and one that is mostly soft shadow (the I-beam, the drag
+	// hand) rendered as a solid black slab. Unpremultiply into NRGBA, which
+	// the encoder writes as-is.
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
 	for i := 0; i < w*h; i++ {
 		p := reply.CursorImage[i]
-		// X gives premultiplied ARGB; image.RGBA also wants premultiplied
-		// alpha, so this is a channel reorder rather than a conversion.
+		a := uint32(p >> 24)
 		o := i * 4
-		img.Pix[o] = uint8(p >> 16)   // R
-		img.Pix[o+1] = uint8(p >> 8)  // G
-		img.Pix[o+2] = uint8(p)       // B
-		img.Pix[o+3] = uint8(p >> 24) // A
+		if a == 0 {
+			// Fully transparent: leave the zeroes.
+			continue
+		}
+		un := func(c uint32) uint8 {
+			v := (c*255 + a/2) / a
+			if v > 255 {
+				v = 255
+			}
+			return uint8(v)
+		}
+		img.Pix[o] = un((p >> 16) & 0xff)  // R
+		img.Pix[o+1] = un((p >> 8) & 0xff) // G
+		img.Pix[o+2] = un(p & 0xff)        // B
+		img.Pix[o+3] = uint8(a)            // A
 	}
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
@@ -119,6 +141,8 @@ func (t *CursorTracker) refresh(conn *xgb.Conn) {
 		DataURL: "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes()),
 		HotX:    int(reply.Xhot),
 		HotY:    int(reply.Yhot),
+		Width:   w,
+		Height:  h,
 	}
 
 	t.mu.Lock()

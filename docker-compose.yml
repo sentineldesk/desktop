@@ -87,6 +87,10 @@ services:
       - TZ=${TZ:-UTC}
       - KEYBOARD_LAYOUT=${KEYBOARD_LAYOUT:-us}
       - KEYBOARD_VARIANT=${KEYBOARD_VARIANT:-}
+      # 48px X cursors, so the shape that rides the wire to browsers is
+      # crisp on a Retina screen instead of a 24px bitmap stretched double.
+      # The client labels big bitmaps 2x and draws them at normal size.
+      - XCURSOR_SIZE=${XCURSOR_SIZE:-48}
     volumes:
       # Browser profiles, files, the audit log, the TLS certificate — kept
       # across restarts and upgrades.

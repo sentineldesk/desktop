@@ -79,8 +79,9 @@ export function RemotePointer({
         <path
           d="M1 1 L1 15 L5 12 L8 18 L10.5 16.8 L7.6 11 L12 10 Z"
           fill={colour}
-          stroke="#1b1b16"
-          strokeWidth="1.2"
+          stroke="rgba(255,255,255,.85)"
+          strokeWidth="1"
+          strokeLinejoin="round"
         />
       </svg>
       <span
