@@ -25,7 +25,7 @@
  * first registration before making the second). A page that is merely
  * loaded, or a login that has not happened, publishes nothing. */
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 import type { Desktop } from './useDesktopStream'
 import { ensureModelContext, text, type WebMcpTool } from './webmcp'
@@ -40,6 +40,13 @@ const NAMED_KEYS =
 
 export function useWebMcp(desktop: Desktop) {
   const live = desktop.state === 'live'
+  /* The hook's engine returns a fresh object every render, so an effect
+   * keyed on it re-registered and re-aborted the whole catalogue on every
+   * state change — and every abort rejected 27 registration promises nobody
+   * was listening to (the AbortError spam in the console). The tools close
+   * over this ref instead and register once per connection. */
+  const ref = useRef(desktop)
+  ref.current = desktop
 
   useEffect(() => {
     if (!live) return
@@ -65,16 +72,16 @@ export function useWebMcp(desktop: Desktop) {
           'Report the shared desktop: who holds the controls, who is in the room, the stream quality, and whether a recording is running.',
         annotations: { readOnlyHint: true },
         execute: async () => {
-          const driver = desktop.control.holder ?? '(nobody)'
-          const roster = desktop.members
+          const driver = ref.current.control.holder ?? '(nobody)'
+          const roster = ref.current.members
             .map((m) => `${m.name}${m.controller ? ' [driving]' : ''}${m.agent ? ' [AI]' : ''}`)
             .join(', ')
           return text(
             [
-              `controls: ${desktop.control.yours ? 'you hold them' : `held by ${driver}`}`,
+              `controls: ${ref.current.control.yours ? 'you hold them' : `held by ${driver}`}`,
               `members: ${roster || '(only you)'}`,
-              `quality: ${desktop.quality.mode} (${desktop.quality.fps} fps)`,
-              `recording: ${desktop.recording ? 'yes' : 'no'}`,
+              `quality: ${ref.current.quality.mode} (${ref.current.quality.fps} fps)`,
+              `recording: ${ref.current.recording ? 'yes' : 'no'}`,
             ].join('\n'),
           )
         },
@@ -84,8 +91,8 @@ export function useWebMcp(desktop: Desktop) {
         description:
           'Take the desktop controls so input can be sent. Cooperative: whoever held them is simply told they no longer do.',
         execute: async () => {
-          if (desktop.control.yours) return text('you already hold the controls')
-          desktop.toggleControl()
+          if (ref.current.control.yours) return text('you already hold the controls')
+          ref.current.toggleControl()
           return text('control requested — you now hold the desktop controls')
         },
       },
@@ -93,8 +100,8 @@ export function useWebMcp(desktop: Desktop) {
         name: 'release_control',
         description: 'Release the desktop controls back to nobody.',
         execute: async () => {
-          if (!desktop.control.yours) return text('you do not hold the controls')
-          desktop.toggleControl()
+          if (!ref.current.control.yours) return text('you do not hold the controls')
+          ref.current.toggleControl()
           return text('controls released')
         },
       },
@@ -108,10 +115,10 @@ export function useWebMcp(desktop: Desktop) {
           required: ['text'],
         },
         execute: async (input) => {
-          if (!desktop.control.yours) return needControl()
+          if (!ref.current.control.yours) return needControl()
           const s = String(input.text ?? '')
           if (!s) return text('nothing to type', true)
-          desktop.sendInput({ t: 'kbt', k: s })
+          ref.current.sendInput({ t: 'kbt', k: s })
           return text(`typed ${s.length} characters`)
         },
       },
@@ -130,11 +137,11 @@ export function useWebMcp(desktop: Desktop) {
           required: ['key'],
         },
         execute: async (input) => {
-          if (!desktop.control.yours) return needControl()
+          if (!ref.current.control.yours) return needControl()
           const k = String(input.key ?? '')
           if (!k) return text('no key given', true)
-          desktop.sendInput({ t: 'kb', k, d: 1 })
-          desktop.sendInput({ t: 'kb', k, d: 0 })
+          ref.current.sendInput({ t: 'kb', k, d: 1 })
+          ref.current.sendInput({ t: 'kb', k, d: 0 })
           return text(`pressed ${k}`)
         },
       },
@@ -150,17 +157,17 @@ export function useWebMcp(desktop: Desktop) {
           required: ['x', 'y'],
         },
         execute: async (input) => {
-          if (!desktop.control.yours) return needControl()
+          if (!ref.current.control.yours) return needControl()
           const x = Math.round(Number(input.x))
           const y = Math.round(Number(input.y))
-          desktop.sendInput({ t: 'mm', x, y })
+          ref.current.sendInput({ t: 'mm', x, y })
           return text(`moved to ${x},${y}`)
         },
       },
       {
         name: 'click',
         description:
-          'Click on the desktop. With x and y it moves there first; button 1 is left, 2 middle, 3 right.',
+          'Click on the ref.current. With x and y it moves there first; button 1 is left, 2 middle, 3 right.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -170,13 +177,13 @@ export function useWebMcp(desktop: Desktop) {
           },
         },
         execute: async (input) => {
-          if (!desktop.control.yours) return needControl()
+          if (!ref.current.control.yours) return needControl()
           const b = [1, 2, 3].includes(Number(input.button)) ? Number(input.button) : 1
           if (input.x !== undefined && input.y !== undefined) {
-            desktop.sendInput({ t: 'mm', x: Math.round(Number(input.x)), y: Math.round(Number(input.y)) })
+            ref.current.sendInput({ t: 'mm', x: Math.round(Number(input.x)), y: Math.round(Number(input.y)) })
           }
-          desktop.sendInput({ t: 'mb', b, d: 1 })
-          desktop.sendInput({ t: 'mb', b, d: 0 })
+          ref.current.sendInput({ t: 'mb', b, d: 1 })
+          ref.current.sendInput({ t: 'mb', b, d: 0 })
           return text(`clicked button ${b}`)
         },
       },
@@ -191,11 +198,11 @@ export function useWebMcp(desktop: Desktop) {
           },
         },
         execute: async (input) => {
-          if (!desktop.control.yours) return needControl()
+          if (!ref.current.control.yours) return needControl()
           const dy = Math.trunc(Number(input.dy) || 0)
           const dx = Math.trunc(Number(input.dx) || 0)
           if (!dy && !dx) return text('nothing to scroll', true)
-          desktop.sendInput({ t: 'mw', dy, dx })
+          ref.current.sendInput({ t: 'mw', dy, dx })
           return text(`scrolled dy=${dy} dx=${dx}`)
         },
       },
@@ -208,8 +215,8 @@ export function useWebMcp(desktop: Desktop) {
           required: ['text'],
         },
         execute: async (input) => {
-          if (!desktop.control.yours) return needControl()
-          desktop.sendInput({ t: 'clip', clip: String(input.text ?? '') })
+          if (!ref.current.control.yours) return needControl()
+          ref.current.sendInput({ t: 'clip', clip: String(input.text ?? '') })
           return text('clipboard set')
         },
       },
@@ -218,7 +225,7 @@ export function useWebMcp(desktop: Desktop) {
         description:
           'Capture the desktop to an image file. It is offered in the download tray, at framebuffer quality.',
         execute: async () => {
-          desktop.sendInput({ t: 'capture', action: 'shot' })
+          ref.current.sendInput({ t: 'capture', action: 'shot' })
           return text('screenshot captured — it is waiting in the download tray')
         },
       },
@@ -233,12 +240,12 @@ export function useWebMcp(desktop: Desktop) {
           required: ['mode'],
         },
         execute: async (input) => {
-          if (!desktop.control.yours) return needControl()
+          if (!ref.current.control.yours) return needControl()
           const mode = String(input.mode)
           if (!['auto', 'media', 'high'].includes(mode)) {
             return text('mode must be auto, media, or high', true)
           }
-          desktop.setQuality(mode as 'auto' | 'media' | 'high')
+          ref.current.setQuality(mode as 'auto' | 'media' | 'high')
           return text(`quality set to ${mode}`)
         },
       },
@@ -255,7 +262,7 @@ export function useWebMcp(desktop: Desktop) {
         annotations: { readOnlyHint: true },
         execute: async (input) => {
           try {
-            const listing = await desktop.filesList(String(input.dir ?? ''))
+            const listing = await ref.current.filesList(String(input.dir ?? ''))
             const lines = listing.entries.map(
               (e) => `${e.type === 'dir' ? 'd' : '-'} ${e.name}${e.type === 'file' ? ` (${e.size} B)` : ''}`,
             )
@@ -268,16 +275,16 @@ export function useWebMcp(desktop: Desktop) {
       },
       {
         name: 'make_dir',
-        description: 'Create a directory on the desktop. Needs the controls.',
+        description: 'Create a directory on the ref.current. Needs the controls.',
         inputSchema: {
           type: 'object',
           properties: { path: { type: 'string' } },
           required: ['path'],
         },
         execute: async (input) => {
-          if (!desktop.control.yours) return needControl()
+          if (!ref.current.control.yours) return needControl()
           try {
-            await desktop.filesOp('mkdir', String(input.path))
+            await ref.current.filesOp('mkdir', String(input.path))
             return text('directory created')
           } catch (err) {
             return text(`could not create: ${(err as Error).message}`, true)
@@ -286,7 +293,7 @@ export function useWebMcp(desktop: Desktop) {
       },
       {
         name: 'rename_path',
-        description: 'Rename or move a file or directory on the desktop. Needs the controls.',
+        description: 'Rename or move a file or directory on the ref.current. Needs the controls.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -296,9 +303,9 @@ export function useWebMcp(desktop: Desktop) {
           required: ['path', 'to'],
         },
         execute: async (input) => {
-          if (!desktop.control.yours) return needControl()
+          if (!ref.current.control.yours) return needControl()
           try {
-            await desktop.filesOp('rename', String(input.path), String(input.to))
+            await ref.current.filesOp('rename', String(input.path), String(input.to))
             return text('renamed')
           } catch (err) {
             return text(`could not rename: ${(err as Error).message}`, true)
@@ -312,12 +319,17 @@ export function useWebMcp(desktop: Desktop) {
      * one failure never sinks the rest. */
     for (const tool of tools) {
       try {
-        void ctx.registerTool(tool, { signal })
+        /* The PROMISE also rejects — with AbortError — when the controller
+         * aborts on cleanup; the try only ever caught the synchronous
+         * throw. Unwatched, every unmount printed one uncaught rejection
+         * per tool. */
+        const r = ctx.registerTool(tool, { signal })
+        if (r instanceof Promise) void r.catch(() => {})
       } catch {
         /* already registered, or the browser refused this one */
       }
     }
 
     return () => controller.abort()
-  }, [live, desktop])
+  }, [live])
 }

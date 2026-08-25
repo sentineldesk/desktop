@@ -528,6 +528,7 @@
            font-variant-numeric: tabular-nums; animation: sd-fade .18s; }
   #stats.show { display: block; }
   #stats .st-head { display: flex; align-items: center; gap: 8px;
+             cursor: grab; user-select: none; touch-action: none;
            margin: 0 -14px 8px; padding: 8px 10px 8px 14px;
            border-bottom: 1px solid var(--sd-line-soft);
            cursor: move; user-select: none; -webkit-user-select: none;

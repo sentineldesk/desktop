@@ -49,6 +49,7 @@ import { useWebMcp } from './transport/useWebMcp'
 import { LANGUAGES, setLanguage } from './i18n'
 import { useLiveStats } from './ui/useLiveStats'
 import { Kbd } from './ui/Kbd'
+import { useDraggable } from './ui/useDraggable'
 import { TopBar, type ShellMode } from './ui/TopBar'
 
 /* ---- the logo, shared by the boot screen and the login ------------------- */
@@ -211,6 +212,9 @@ export function App() {
   const [kbOpen, setKbOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const stats = useLiveStats(statsOpen, desktop, videoRef)
+  /* The stats panel is for watching WHILE doing something else, so it can be
+   * parked anywhere and remembers the spot. */
+  const statsDrag = useDraggable('sentineldesk.statsPos')
 
   /* The recording clock. */
   const [recSeconds, setRecSeconds] = useState(0)
@@ -436,9 +440,19 @@ export function App() {
           </div>
         ) : null}
 
-        {statsOpen && stats ? (
-          <div id="stats" className="show" role="status">
-            <div className="st-head">
+        {mode === 'desktop' && statsOpen && stats ? (
+          <div
+            id="stats"
+            className="show"
+            role="status"
+            ref={statsDrag.ref}
+            style={statsDrag.style}
+          >
+            <div
+              className="st-head"
+              onPointerDown={statsDrag.onGrab}
+              onDoubleClick={statsDrag.onHome}
+            >
               <span>WEBRTC</span>
               <span className="st-live" />
               <button id="stats-close" title={t('stats.close')} onClick={() => setStatsOpen(false)}>
@@ -493,8 +507,12 @@ export function App() {
           </div>
         ) : null}
 
-        {filesOpen ? <FilesDialog desktop={desktop} onClose={() => setFilesOpen(false)} /> : null}
-        {streamOpen ? <StreamDialog desktop={desktop} onClose={() => setStreamOpen(false)} /> : null}
+        {mode === 'desktop' && filesOpen ? (
+          <FilesDialog desktop={desktop} onClose={() => setFilesOpen(false)} />
+        ) : null}
+        {mode === 'desktop' && streamOpen ? (
+          <StreamDialog desktop={desktop} onClose={() => setStreamOpen(false)} />
+        ) : null}
 
         {settingsOpen ? (
           <MediaSettings
@@ -503,7 +521,7 @@ export function App() {
           />
         ) : null}
 
-        {live && kbOpen && desktop.control.yours ? (
+        {live && mode === 'desktop' && kbOpen && desktop.control.yours ? (
           <Kbd send={desktop.sendInput} onClose={() => setKbOpen(false)} />
         ) : null}
 

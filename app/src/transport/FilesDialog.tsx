@@ -34,6 +34,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { Desktop, FsEntry } from './useDesktopStream'
 import styles from './FilesDialog.module.css'
+import { useDraggable } from '../ui/useDraggable'
 
 interface Transfer {
   readonly id: string
@@ -77,6 +78,7 @@ type DirPicker = (opts?: {
 }) => Promise<FileSystemDirectoryHandle>
 
 export function FilesDialog({ desktop, onClose }: { desktop: Desktop; onClose(): void }) {
+  const drag = useDraggable('sentineldesk.filesPos')
   const { t } = useTranslation()
 
   /* Through a ref, and this is a BUG FIX, not tidiness: `desktop` is a new
@@ -456,8 +458,14 @@ export function FilesDialog({ desktop, onClose }: { desktop: Desktop; onClose():
         aria-modal="true"
         aria-label={t('fm.title')}
         className={styles.window}
+        ref={drag.ref}
+        style={drag.style}
       >
-        <div className={styles.title}>
+        <div
+          className={styles.title}
+          onPointerDown={drag.onGrab}
+          onDoubleClick={drag.onHome}
+        >
           <span className={styles.tt}>{t('fm.title')}</span>
           <span className={styles.sub}>{t('fm.subtitle')}</span>
           <button

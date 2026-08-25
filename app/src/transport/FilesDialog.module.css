@@ -42,6 +42,9 @@
 }
 
 .title {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
   display: flex;
   align-items: baseline;
   gap: 10px;
