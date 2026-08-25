@@ -789,7 +789,16 @@ function useChatWidth(): { onGrab(e: React.PointerEvent): void; reset(): void } 
       }
     }
     window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    /* The inline width goes when the panel goes. It lives on the body because
+     * the video is `calc(100% - var(--chat-w))` and both sides must move
+     * together — but an inline value beats the stylesheet, so leaving it
+     * behind means closing the chat removes `body.chat-open` and the desktop
+     * still stays narrowed by a panel that is no longer there. The number
+     * survives in localStorage, so the next opening is the width they dragged. */
+    return () => {
+      window.removeEventListener('resize', onResize)
+      document.body.style.removeProperty('--chat-w')
+    }
   }, [])
 
   const onGrab = useCallback(
