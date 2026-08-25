@@ -530,7 +530,19 @@ function SessionRow(props: {
               <IconTrash />
               {t('chat.forgetOne')}
             </DropdownMenuItem>
-          ) : null}
+          ) : (
+            /* Shown but disabled on the live row, with the why in the tip.
+             * Absent, the button reads as missing; present and refused, it
+             * reads as a rule — the engine is still writing to this one. */
+            <DropdownMenuItem
+              className="gap-2 px-2 py-1.5"
+              disabled
+              title={t('chat.forgetAllKeepsLive')}
+            >
+              <IconTrash />
+              {t('chat.forgetOne')}
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
