@@ -307,5 +307,8 @@
   "ws.loginSubtitle": "Iniciá sesión para entrar a tu escritorio remoto.",
   "ws.attach": "Adjuntar",
   "ws.desktopChip": "Escritorio",
-  "ws.composerHint": "El agente ve y maneja este escritorio. Podés interrumpirlo cuando quieras."
+  "ws.composerHint": "El agente ve y maneja este escritorio. Podés interrumpirlo cuando quieras.",
+  "ws.live": "En vivo",
+  "ws.download": "Descargar",
+  "ws.remove": "Quitar"
 }

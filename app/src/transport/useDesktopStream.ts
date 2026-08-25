@@ -234,6 +234,13 @@ export interface Desktop {
   saveDelivery(id: string): void
   /** Drop one delivery from the tray. The file stays on the desktop. */
   dismissDelivery(id: string): void
+  /** Pull a delivery's bytes into a Blob for an inline preview. The offer
+   * stays valid server-side, so the caller keeps the Blob and later saves
+   * from it without pulling twice. */
+  previewDelivery(id: string): Promise<Blob>
+  /** While held, deliveries stop saving themselves — the agent workspace
+   * previews them in the canvas and the download becomes a button there. */
+  setDeliveryHold(hold: boolean): void
   /** The agent chat panel: availability, transcript, history and the three
    * things a person can do with it. See agentChat.ts.
    *
@@ -884,6 +891,31 @@ export function useDesktopStream(
     setDeliveries((prev) => prev.filter((d) => d.id !== id))
   }, [])
 
+  /* While held, a delivery does NOT save itself: the agent workspace shows
+   * it in the canvas instead, and the download is a button there. Desktop
+   * mode keeps the old behaviour — small files save on arrival. */
+  const deliveryHoldRef = useRef(false)
+  const setDeliveryHold = useCallback((hold: boolean) => {
+    deliveryHoldRef.current = hold
+  }, [])
+
+  /* Pull a delivery's bytes into a Blob for an inline preview — the offer
+   * stays valid server-side, so a later download pulls nothing twice: the
+   * caller keeps the Blob and saves from it. */
+  const previewDelivery = useCallback(
+    (id: string): Promise<Blob> => {
+      const parts: Uint8Array[] = []
+      return pullDelivery(
+        id,
+        (part) => {
+          parts.push(part)
+        },
+        () => {},
+      ).then(() => new Blob(parts as BlobPart[]))
+    },
+    [pullDelivery],
+  )
+
   /* Local clipboard → desktop, shared by two triggers with ONE dedupe.
    *
    * The focus/visibility sync (below, in the effect) is the legacy client's
@@ -1474,7 +1506,9 @@ export function useDesktopStream(
                 /* Small files save themselves, as the ticket click used to;
                  * big ones wait in the tray for the click that lets the
                  * save stream to disk. */
-                if (size <= AUTO_SAVE_LIMIT) saveDeliveryRef.current(offer, false)
+                if (size <= AUTO_SAVE_LIMIT && !deliveryHoldRef.current) {
+                  saveDeliveryRef.current(offer, false)
+                }
                 return
               }
               if (m.t === 'capture_state') {
@@ -1738,6 +1772,8 @@ export function useDesktopStream(
     deliveries,
     saveDelivery,
     dismissDelivery,
+    previewDelivery,
+    setDeliveryHold,
     question,
     answerQuestion,
     controlRequest,

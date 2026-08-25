@@ -138,6 +138,13 @@ export function App() {
   useEffect(() => {
     localStorage.setItem('sentineldesk.mode', mode)
   }, [mode])
+  /* Agent mode holds deliveries: the workspace previews them in its canvas
+   * and the download is a button there. Desktop keeps the tray behaviour. */
+  useEffect(() => {
+    desktop.setDeliveryHold(mode === 'agent')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode])
+
   /* The canvas expanded inside agent mode: desktop's layout, borrowed. */
   const [expanded, setExpanded] = useState(false)
   useEffect(() => {
@@ -544,7 +551,7 @@ export function App() {
         <DropLayer
           armed={drop.armed}
           drops={drop.drops}
-          deliveries={desktop.deliveries}
+          deliveries={mode === 'desktop' ? desktop.deliveries : []}
           onSave={desktop.saveDelivery}
           onDismiss={desktop.dismissDelivery}
         />

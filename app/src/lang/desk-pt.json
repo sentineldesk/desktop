@@ -307,5 +307,8 @@
   "ws.loginSubtitle": "Entre para acessar seu desktop remoto.",
   "ws.attach": "Anexar",
   "ws.desktopChip": "Desktop",
-  "ws.composerHint": "O agente vê e controla este desktop. Você pode interrompê-lo quando quiser."
+  "ws.composerHint": "O agente vê e controla este desktop. Você pode interrompê-lo quando quiser.",
+  "ws.live": "Ao vivo",
+  "ws.download": "Baixar",
+  "ws.remove": "Remover"
 }

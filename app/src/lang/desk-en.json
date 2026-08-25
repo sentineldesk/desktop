@@ -307,5 +307,8 @@
   "ws.loginSubtitle": "Sign in to access your remote desktop.",
   "ws.attach": "Attach",
   "ws.desktopChip": "Desktop",
-  "ws.composerHint": "The agent sees and drives this desktop. You can interrupt it whenever you want."
+  "ws.composerHint": "The agent sees and drives this desktop. You can interrupt it whenever you want.",
+  "ws.live": "Live",
+  "ws.download": "Download",
+  "ws.remove": "Remove"
 }

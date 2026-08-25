@@ -42,6 +42,8 @@ import {
   IconLanguage,
   IconLogout,
   IconMoon,
+  IconPhoto,
+  IconPlayerPlayFilled,
   IconPlayerStopFilled,
   IconPlus,
   IconSearch,
@@ -104,7 +106,8 @@ const DOCS_URL = 'https://sentineldesk.github.io/desktop/docs/guide/index.html'
 const PANEL_KEY = 'sentineldesk.sessionPanel'
 /* The stage's posture: the desktop card starts open — watching the agent work
  * is the point of the card — and remembers being folded. */
-const STAGE_KEY = 'sentineldesk.stage'
+const CANVAS_KEY = 'sentineldesk.canvas'
+const CANVAS_W_KEY = 'sentineldesk.canvasW'
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).slice(0, 2)
@@ -314,15 +317,132 @@ export function AgentWorkspace(props: {
   const [panelOpen, setPanelOpen] = useState(
     () => localStorage.getItem(PANEL_KEY) !== 'shut',
   )
-  const [stageOpen, setStageOpen] = useState(
-    () => localStorage.getItem(STAGE_KEY) !== 'shut',
+  /* The canvas: the desktop as a SIDE PANEL — menu | chat | canvas, the
+   * ChatGPT-canvas posture the owner picked from the three mockups. It
+   * opens from the composer's Desktop chip, and opens ITSELF when the agent
+   * starts working: acting on the desktop is what the window is for. */
+  const [canvasOpen, setCanvasOpen] = useState(
+    () => localStorage.getItem(CANVAS_KEY) === 'open',
   )
+  const [canvasW, setCanvasW] = useState(() => {
+    const saved = Number(localStorage.getItem(CANVAS_W_KEY) || 0)
+    return saved >= 380 && saved <= 1200 ? saved : 600
+  })
+  /* What the canvas shows: the live desktop, or one captured file. */
+  const [canvasView, setCanvasView] = useState<'live' | string>('live')
+  /* Captures and recordings, held for preview: id → object URL + kind.
+   * Built as deliveries arrive; the blobs outlive the delivery tray so a
+   * preview never dies under the reader. */
+  const [media, setMedia] = useState<
+    readonly { id: string; name: string; kind: 'image' | 'video' | 'file'; url: string; size: number }[]
+  >([])
+  const mediaRef = useRef(media)
+  mediaRef.current = media
   useEffect(() => {
     localStorage.setItem(PANEL_KEY, panelOpen ? 'open' : 'shut')
   }, [panelOpen])
   useEffect(() => {
-    localStorage.setItem(STAGE_KEY, stageOpen ? 'open' : 'shut')
-  }, [stageOpen])
+    localStorage.setItem(CANVAS_KEY, canvasOpen ? 'open' : 'shut')
+    /* Four columns is a crowd: the canvas opening folds the session panel.
+     * ctrl+b brings it back for whoever has the width. */
+    if (canvasOpen) setPanelOpen(false)
+  }, [canvasOpen])
+  useEffect(() => {
+    localStorage.setItem(CANVAS_W_KEY, String(canvasW))
+  }, [canvasW])
+
+  /* A run starting is the second way the canvas opens — watching the agent
+   * act is the point of the panel. Only the TRANSITION opens it, so closing
+   * it mid-run stays closed. */
+  const busyBefore = useRef('')
+  useEffect(() => {
+    if (busyBefore.current === '' && chat.busy !== '') setCanvasOpen(true)
+    busyBefore.current = chat.busy
+  }, [chat.busy])
+
+  /* Deliveries — screenshots, recordings — arrive held (App set the hold),
+   * get pulled into a Blob, and open in the canvas as a preview. */
+  const seenDeliveries = useRef(new Set<string>())
+  useEffect(() => {
+    for (const dv of d.deliveries) {
+      if (dv.status !== 'ready' || seenDeliveries.current.has(dv.id)) continue
+      seenDeliveries.current.add(dv.id)
+      const name = dv.name
+      void d
+        .previewDelivery(dv.id)
+        .then((blob) => {
+          const ext = (name.split('.').pop() || '').toLowerCase()
+          const kind = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)
+            ? ('image' as const)
+            : ['webm', 'mp4', 'mkv', 'mov'].includes(ext)
+              ? ('video' as const)
+              : ('file' as const)
+          const url = URL.createObjectURL(
+            kind === 'video' ? new Blob([blob], { type: 'video/webm' }) : blob,
+          )
+          setMedia((prev) => [...prev, { id: dv.id, name, kind, url, size: dv.size }])
+          setCanvasView(dv.id)
+          setCanvasOpen(true)
+          /* The tray card would say the same thing twice. */
+          d.dismissDelivery(dv.id)
+        })
+        .catch(() => {
+          seenDeliveries.current.delete(dv.id)
+        })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [d.deliveries])
+  /* Object URLs live as long as the workspace; freed on unmount. */
+  useEffect(
+    () => () => {
+      for (const m of mediaRef.current) URL.revokeObjectURL(m.url)
+    },
+    [],
+  )
+
+  const dropMedia = useCallback((id: string) => {
+    setMedia((prev) => {
+      const gone = prev.find((m) => m.id === id)
+      if (gone) URL.revokeObjectURL(gone.url)
+      return prev.filter((m) => m.id !== id)
+    })
+    setCanvasView((v) => (v === id ? 'live' : v))
+  }, [])
+
+  const downloadMedia = useCallback((m: { url: string; name: string }) => {
+    const a = document.createElement('a')
+    a.href = m.url
+    a.download = m.name
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  }, [])
+
+  /* The divider: grab, clamp so neither the chat nor the canvas can vanish,
+   * remember. Pointer capture keeps the drag alive over the video. */
+  const onGrabDivider = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    const handle = e.currentTarget as HTMLElement
+    handle.setPointerCapture(e.pointerId)
+    const startX = e.clientX
+    const startW = canvasW
+    const move = (ev: PointerEvent) => {
+      const next = Math.min(
+        Math.max(startW + (startX - ev.clientX), 380),
+        Math.max(380, window.innerWidth - 260 - 380),
+      )
+      setCanvasW(next)
+    }
+    const up = () => {
+      handle.removeEventListener('pointermove', move)
+      handle.removeEventListener('pointerup', up)
+      handle.removeEventListener('pointercancel', up)
+    }
+    handle.addEventListener('pointermove', move)
+    handle.addEventListener('pointerup', up)
+    handle.addEventListener('pointercancel', up)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvasW])
 
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -754,66 +874,6 @@ export function AgentWorkspace(props: {
           </MessageScroller>
         </MessageScrollerProvider>
 
-        {/* C. the desktop, as a card in the conversation */}
-        <div className="mx-auto w-full max-w-[760px] shrink-0 px-5 pt-1.5">
-          {stageOpen ? (
-            <figure className="overflow-hidden rounded-2xl border bg-card">
-              <div className="flex items-center gap-2 border-b px-3 py-1.5 text-[11px] text-muted-foreground">
-                <span className={cn('size-[5px] rounded-full', d.state === 'live' ? 'bg-[var(--sd-drive)] shadow-[0_0_6px_var(--sd-drive)]' : 'bg-muted-foreground')} />
-                {t('ws.stage')}
-                <span className="ml-auto flex items-center gap-1">
-                  <Button size="icon-xs" variant="ghost" onClick={() => props.onExpand(true)} title={t('ws.expand')}>
-                    <IconArrowsDiagonal />
-                  </Button>
-                  <Button size="icon-xs" variant="ghost" onClick={() => setStageOpen(false)} title={t('ws.collapse')}>
-                    <IconX />
-                  </Button>
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => props.onExpand(true)}
-                className="relative block aspect-video w-full cursor-zoom-in bg-black"
-                aria-label={t('ws.expand')}
-              >
-                {props.screen}
-              </button>
-              <div className="flex items-center gap-2.5 border-t bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className={cn('size-1.5 shrink-0 rounded-full', yours || agentDrives ? 'bg-[var(--sd-drive)] shadow-[0_0_8px_var(--sd-drive)]' : 'bg-[var(--sd-watch)]')} />
-                  <span className="truncate">
-                    {yours
-                      ? t('room.youControl')
-                      : agentDrives
-                        ? t('ws.agentDrives')
-                        : holder
-                          ? t('room.controlledBy', { name: holder })
-                          : t('room.free')}
-                  </span>
-                </span>
-                <Button
-                  size="xs"
-                  variant={yours ? 'outline' : 'default'}
-                  className="ml-auto shrink-0"
-                  onClick={d.toggleControl}
-                >
-                  {yours ? t('room.release') : t('room.take')}
-                </Button>
-              </div>
-            </figure>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setStageOpen(true)}
-              className="flex w-full items-center gap-2 rounded-lg border bg-card px-3 py-2 text-xs text-muted-foreground hover:bg-foreground/5"
-            >
-              <IconDeviceDesktop className="size-4" />
-              {t('ws.stage')}
-              <span className={cn('ml-auto size-[5px] rounded-full', d.state === 'live' ? 'bg-[var(--sd-drive)] shadow-[0_0_6px_var(--sd-drive)]' : 'bg-muted-foreground')} />
-            </button>
-          )}
-        </div>
-
         {/* the composer */}
         <div className="mx-auto w-full max-w-[760px] shrink-0 px-5 pt-3 pb-4">
           <div className="relative">
@@ -931,10 +991,10 @@ export function AgentWorkspace(props: {
                   type="button"
                   className={cn(
                     'flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-foreground/5 hover:text-foreground',
-                    stageOpen && 'bg-foreground/5 text-foreground',
+                    canvasOpen && 'bg-foreground/5 text-foreground',
                   )}
-                  aria-pressed={stageOpen}
-                  onClick={() => setStageOpen((v) => !v)}
+                  aria-pressed={canvasOpen}
+                  onClick={() => setCanvasOpen((v) => !v)}
                 >
                   <IconDeviceDesktop className="size-3.5" />
                   {t('ws.desktopChip')}
@@ -976,6 +1036,169 @@ export function AgentWorkspace(props: {
           </div>
         </div>
       </main>
+
+      {/* C. the canvas — the desktop (and every capture) as a side panel,
+          the split-anchored posture: menu | chat | canvas. The divider
+          drags; the chip in the composer and a starting run both open it. */}
+      {canvasOpen ? (
+        <>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            onPointerDown={onGrabDivider}
+            className="relative z-10 -mx-[2px] w-[5px] shrink-0 cursor-col-resize"
+          />
+          <section
+            style={{ width: canvasW }}
+            className="flex min-h-0 shrink-0 flex-col border-l bg-card max-[1000px]:absolute max-[1000px]:inset-y-0 max-[1000px]:right-0 max-[1000px]:z-30 max-[1000px]:shadow-2xl"
+          >
+            <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
+              {canvasView === 'live' ? (
+                <>
+                  <span
+                    className={cn(
+                      'size-[5px] shrink-0 rounded-full',
+                      d.state === 'live'
+                        ? 'bg-[var(--sd-drive)] shadow-[0_0_6px_var(--sd-drive)]'
+                        : 'bg-muted-foreground',
+                    )}
+                  />
+                  <span className="truncate text-xs font-medium">{t('ws.stage')}</span>
+                  <span
+                    className={cn(
+                      'ml-1 hidden truncate rounded-full px-2 py-0.5 text-[10.5px] min-[520px]:inline',
+                      yours || agentDrives
+                        ? 'bg-[color-mix(in_srgb,var(--sd-drive)_12%,transparent)] text-[var(--sd-drive)]'
+                        : 'bg-muted text-muted-foreground',
+                    )}
+                  >
+                    {yours
+                      ? t('room.youControl')
+                      : agentDrives
+                        ? t('ws.agentDrives')
+                        : holder
+                          ? t('room.controlledBy', { name: holder })
+                          : t('room.free')}
+                  </span>
+                  <span className="ml-auto flex items-center gap-1">
+                    <Button size="xs" variant={yours ? 'outline' : 'default'} onClick={d.toggleControl}>
+                      {yours ? t('room.release') : t('room.take')}
+                    </Button>
+                    <Button size="icon-xs" variant="ghost" onClick={() => props.onExpand(true)} title={t('ws.expand')}>
+                      <IconArrowsDiagonal />
+                    </Button>
+                    <Button size="icon-xs" variant="ghost" onClick={() => setCanvasOpen(false)} title={t('chat.close')}>
+                      <IconX />
+                    </Button>
+                  </span>
+                </>
+              ) : (
+                (() => {
+                  const m = media.find((x) => x.id === canvasView)
+                  if (!m) return null
+                  return (
+                    <>
+                      <span className="truncate text-xs font-medium">{m.name}</span>
+                      <span className="text-[10.5px] text-muted-foreground">
+                        {m.size >= 1048576
+                          ? `${(m.size / 1048576).toFixed(1)} MB`
+                          : `${Math.max(1, Math.round(m.size / 1024))} KB`}
+                      </span>
+                      <span className="ml-auto flex items-center gap-1">
+                        <Button size="xs" variant="outline" onClick={() => downloadMedia(m)}>
+                          <IconDownload />
+                          {t('ws.download')}
+                        </Button>
+                        <Button size="icon-xs" variant="ghost" onClick={() => dropMedia(m.id)} title={t('ws.remove')}>
+                          <IconTrash />
+                        </Button>
+                        <Button size="icon-xs" variant="ghost" onClick={() => setCanvasOpen(false)} title={t('chat.close')}>
+                          <IconX />
+                        </Button>
+                      </span>
+                    </>
+                  )
+                })()
+              )}
+            </div>
+
+            <div className="relative min-h-0 flex-1 bg-black">
+              {canvasView === 'live' ? (
+                <div className="absolute inset-0">{props.screen}</div>
+              ) : (
+                (() => {
+                  const m = media.find((x) => x.id === canvasView)
+                  if (!m) return null
+                  if (m.kind === 'image') {
+                    return (
+                      <img
+                        src={m.url}
+                        alt={m.name}
+                        className="absolute inset-0 h-full w-full object-contain"
+                      />
+                    )
+                  }
+                  if (m.kind === 'video') {
+                    return (
+                      // eslint-disable-next-line jsx-a11y/media-has-caption
+                      <video src={m.url} controls autoPlay className="absolute inset-0 h-full w-full object-contain" />
+                    )
+                  }
+                  return (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+                      <IconDownload className="size-6" />
+                      <span className="text-xs">{m.name}</span>
+                      <Button size="sm" variant="outline" onClick={() => downloadMedia(m)}>
+                        {t('ws.download')}
+                      </Button>
+                    </div>
+                  )
+                })()
+              )}
+            </div>
+
+            {/* the reel: the live desktop plus every capture, one chip each */}
+            {media.length > 0 ? (
+              <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-t px-2 py-1.5">
+                <button
+                  type="button"
+                  onClick={() => setCanvasView('live')}
+                  className={cn(
+                    'flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]',
+                    canvasView === 'live'
+                      ? 'bg-foreground/10 text-foreground'
+                      : 'text-muted-foreground hover:bg-foreground/5',
+                  )}
+                >
+                  <span className="size-[5px] rounded-full bg-[var(--sd-drive)]" />
+                  {t('ws.live')}
+                </button>
+                {media.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setCanvasView(m.id)}
+                    className={cn(
+                      'flex max-w-40 shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]',
+                      canvasView === m.id
+                        ? 'bg-foreground/10 text-foreground'
+                        : 'text-muted-foreground hover:bg-foreground/5',
+                    )}
+                    title={m.name}
+                  >
+                    {m.kind === 'video' ? (
+                      <IconPlayerPlayFilled className="size-3" />
+                    ) : (
+                      <IconPhoto className="size-3" />
+                    )}
+                    <span className="truncate">{m.name}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        </>
+      ) : null}
 
       {/* C2. the session panel — the terminal's /panel, ctrl+b here too */}
       {panelOpen ? (

@@ -237,9 +237,13 @@ export function TopBar(props: {
         onClick={props.onVoice}
         title={t('toolbar.voice')}
       >
+        {/* A headset, not another speaker: the audio toggle two wells over
+         * already wears the speaker-with-waves, and two identical icons for
+         * two different verbs read as a duplicate button. */}
         <svg viewBox="0 0 24 24">
-          <path d="M4.5 9.5h3l4-3.2v11.4l-4-3.2h-3z" />
-          <path d="M15.5 9a4.2 4.2 0 010 6" />
+          <path d="M4 14a8 8 0 0 1 16 0" />
+          <rect x="3" y="14" width="4.5" height="6" rx="2" />
+          <rect x="16.5" y="14" width="4.5" height="6" rx="2" />
         </svg>
         {d.voiceLive && d.voicePeers.length > 0 ? (
           <span className="badge">{d.voicePeers.length}</span>
