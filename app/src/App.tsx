@@ -51,6 +51,7 @@ import { useLiveStats } from './ui/useLiveStats'
 import { Kbd } from './ui/Kbd'
 import { useDraggable } from './ui/useDraggable'
 import { TopBar, type ShellMode } from './ui/TopBar'
+import { AboutDialog } from './ui/AboutDialog'
 
 /* ---- the logo, shared by the boot screen and the login ------------------- */
 
@@ -220,6 +221,7 @@ export function App() {
   const [statsOpen, setStatsOpen] = useState(false)
   const [kbOpen, setKbOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [aboutOpen, setAboutOpen] = useState(false)
   const stats = useLiveStats(statsOpen, desktop, videoRef)
   /* The stats panel is for watching WHILE doing something else, so it can be
    * parked anywhere and remembers the spot. */
@@ -378,6 +380,7 @@ export function App() {
           kbOpen={kbOpen}
           onPickQuality={(q) => desktop.setQuality(q)}
           onSettings={() => setSettingsOpen(true)}
+          onAbout={() => setAboutOpen(true)}
           onLogout={logout}
           langCode={langCode}
           name={name || t('ws.you')}
@@ -399,6 +402,7 @@ export function App() {
             expanded={expanded}
             onExpand={setExpanded}
             onSettings={() => setSettingsOpen(true)}
+            onAbout={() => setAboutOpen(true)}
             onLogout={logout}
             muted={muted || policyMuted}
             onAudio={() => {
@@ -540,6 +544,12 @@ export function App() {
             onChanged={settingsChanged}
           />
         ) : null}
+
+        <AboutDialog
+          open={aboutOpen}
+          onOpenChange={setAboutOpen}
+          version={desktop.serverVersion}
+        />
 
         {live && mode === 'desktop' && kbOpen && desktop.control.yours ? (
           <Kbd send={desktop.sendInput} onClose={() => setKbOpen(false)} />

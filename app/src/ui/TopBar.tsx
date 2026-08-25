@@ -116,6 +116,7 @@ export function TopBar(props: {
   kbOpen: boolean
   onPickQuality(mode: 'auto' | 'media' | 'high'): void
   onSettings(): void
+  onAbout(): void
   onLogout?: (() => void) | undefined
   langCode: string
   name: string
@@ -492,6 +493,14 @@ export function TopBar(props: {
                   ? t('ws.themeDark')
                   : t('ws.themeLight')}
               </span>
+            </button>
+            <button
+              onClick={() => {
+                setMoreOpen(false)
+                props.onAbout()
+              }}
+            >
+              <span>{t('about.item')}</span>
             </button>
             {props.onLogout ? (
               <button

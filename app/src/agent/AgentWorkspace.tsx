@@ -39,6 +39,7 @@ import {
   IconChevronUp,
   IconDeviceDesktop,
   IconDots,
+  IconInfoCircle,
   IconDownload,
   IconArrowsDiagonal,
   IconExternalLink,
@@ -548,6 +549,7 @@ export function AgentWorkspace(props: {
   expanded: boolean
   onExpand(v: boolean): void
   onSettings(): void
+  onAbout(): void
   onLogout?: (() => void) | undefined
   /** The stream's sound, as the top bar shows it — one state, two buttons. */
   muted: boolean
@@ -1102,6 +1104,17 @@ export function AgentWorkspace(props: {
                 <IconExternalLink className="size-4 text-muted-foreground" />
                 {t('ws.docs')}
               </a>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-foreground/5"
+                onClick={() => {
+                  setUserOpen(false)
+                  props.onAbout()
+                }}
+              >
+                <IconInfoCircle className="size-4 text-muted-foreground" />
+                {t('about.item')}
+              </button>
               {props.onLogout ? (
                 <>
                   <div className="mx-1 my-1 h-px bg-border" />

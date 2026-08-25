@@ -173,6 +173,8 @@ export interface Desktop {
    * That was a real reload bug: the lease said yours, the desktop never
    * claimed, and the only cure was releasing and asking again. */
   readonly inputReady: boolean
+  /** The build the server said it is, from the config frame; '' until then. */
+  readonly serverVersion: string
   /** The RUNTIME is recording (server-side MP4). */
   readonly recording: boolean
   /** Epoch ms when the current recording began; 0 while not recording. */
@@ -377,6 +379,7 @@ export function useDesktopStream(
   const [cursor, setCursor] = useState<string | null>(null)
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
   const [recording, setRecording] = useState(false)
+  const [serverVersion, setServerVersion] = useState('')
   const [recordingSince, setRecordingSince] = useState(0)
   const [restreams, setRestreams] = useState<readonly RestreamInfo[]>([])
   const [restreamError, setRestreamError] = useState<string | null>(null)
@@ -1388,6 +1391,9 @@ export function useDesktopStream(
             ...(msg.iceServers ?? []),
           ]
           iceServersRef.current = servers
+          /* The build, for the About card. Sent after auth on purpose. */
+          const v = (msg as { version?: string }).version
+          if (v) setServerVersion(v)
           pc = new RTCPeerConnection({ iceServers: servers })
           pcRef.current = pc
           pc.ontrack = (e) => {
@@ -1756,6 +1762,7 @@ export function useDesktopStream(
     pointer,
     cursor,
     recording,
+    serverVersion,
     recordingSince,
     restreaming: restreams.length > 0,
     restreams,
