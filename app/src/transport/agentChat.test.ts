@@ -28,6 +28,7 @@ import {
   classifyHistory,
   isRunning,
   matchCommand,
+  restoreTurns,
   settleStreaming,
   type AgentCommand,
   type AgentMessage,
@@ -183,5 +184,80 @@ describe('settleStreaming', () => {
     const out = settleStreaming([mid])
     expect(out[0].text).toBe('half an ans')
     expect(out[0].streamed).toBe(true)
+  })
+})
+
+/** restoreTurns is the shape a reloaded conversation comes back in.
+ *
+ * The bug it fixes was purely visual and therefore invisible to every layer
+ * that could have caught it: the record was right, the wire was right, the
+ * panel drew each turn faithfully — as its own bubble, with its own fold. A
+ * twelve-turn run that had been ONE chain of tool calls while it ran came back
+ * from history as twelve headers reading "Tools · 2".
+ *
+ * So what is asserted here is the property the eye was checking: consecutive
+ * agent turns become one bubble, carrying every step in order, and a human
+ * turn still stands on its own.
+ */
+describe('restoreTurns', () => {
+  let n = 0
+  const mkKey = () => `k${++n}`
+  const turn = (role: string, text: string, tools: string[] = []) => ({
+    role,
+    text,
+    steps: tools.map((tool) => ({ tool, detail: '' })),
+  })
+
+  it('folds a run into one bubble however many turns it took', () => {
+    const out = restoreTurns(
+      [
+        turn('human', 'play the video'),
+        turn('agent', 'reading the skill', ['skill_read']),
+        turn('agent', 'taking control', ['request_control']),
+        turn('agent', 'opening it', ['browser_open']),
+      ],
+      'past-79',
+      mkKey,
+    )
+    expect(out).toHaveLength(2)
+    expect(out[0].role).toBe('human')
+    expect(out[1].steps.map((s) => s.tool)).toEqual([
+      'skill_read',
+      'request_control',
+      'browser_open',
+    ])
+  })
+
+  it('reads as paragraphs, not as one run-on sentence', () => {
+    const out = restoreTurns([turn('agent', 'first'), turn('agent', 'second')], 'c', mkKey)
+    expect(out[0].text).toBe('first\n\nsecond')
+  })
+
+  it('does not add an empty paragraph for a turn that only called tools', () => {
+    const out = restoreTurns(
+      [turn('agent', 'said something'), turn('agent', '', ['browser_wait_until'])],
+      'c',
+      mkKey,
+    )
+    expect(out[0].text).toBe('said something')
+    expect(out[0].steps).toHaveLength(1)
+  })
+
+  it('starts a new bubble after a human turn, so a continued conversation is not one blob', () => {
+    const out = restoreTurns(
+      [turn('agent', 'done'), turn('human', 'now this'), turn('agent', 'on it')],
+      'c',
+      mkKey,
+    )
+    expect(out.map((m) => m.role)).toEqual(['agent', 'human', 'agent'])
+  })
+
+  it('gives every bubble a key of its own', () => {
+    const out = restoreTurns([turn('human', 'a'), turn('agent', 'b')], 'c', mkKey)
+    expect(new Set(out.map((m) => m.key)).size).toBe(out.length)
+  })
+
+  it('restores nothing as nothing rather than as an empty bubble', () => {
+    expect(restoreTurns([], 'c', mkKey)).toEqual([])
   })
 })

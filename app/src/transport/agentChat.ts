@@ -198,6 +198,65 @@ function stepsOf(h: Wire): AgentStep[] {
 }
 const num = (v: unknown): number => (typeof v === 'number' && isFinite(v) ? v : 0)
 
+/* One bubble per EXCHANGE, not one per model turn.
+ *
+ * The runtime records a run the way it happened: a goal, then one turn for
+ * every time the model spoke, each carrying the tool calls it made. The live
+ * panel does not draw it that way — agent_step and agent_delta both land on
+ * the one bubble that stays open from the first call until agent_end, so a run
+ * of twelve turns shows as one piece of narration above one folded chain of
+ * every call in it.
+ *
+ * Restoring turn by turn drew the same record in a different shape: twelve
+ * bubbles, twelve "Tools · 2" headers, two lines behind each. Nothing threw
+ * and nothing was lost — a person reloading simply watched the conversation
+ * they had been reading come apart. So consecutive agent turns are merged
+ * HERE. The record stays per-turn, because that is what happened; only the
+ * drawing is grouped, the way the live path already groups it.
+ *
+ * A human turn closes the group. There is only ever one, at the top of a run,
+ * in what the runtime sends today — handling it anyway costs one condition and
+ * means a session holding more than one goal draws correctly the first time it
+ * exists rather than the first time somebody notices it does not. */
+export function restoreTurns(
+  turns: Wire[],
+  chat: string,
+  mkKey: () => string,
+): AgentMessage[] {
+  const out: AgentMessage[] = []
+  for (const h of turns) {
+    const role = (str(h.role) || 'system') as AgentMessage['role']
+    const text = str(h.text)
+    const steps = stepsOf(h)
+    const prev = out[out.length - 1]
+    if (role === 'agent' && prev && prev.role === 'agent') {
+      out[out.length - 1] = {
+        ...prev,
+        /* A blank line between, so two turns of prose read as two paragraphs
+         * rather than one run-on sentence. A turn that only called tools has
+         * no text and must not contribute an empty paragraph. */
+        text: prev.text && text ? `${prev.text}\n\n${text}` : prev.text || text,
+        steps: [...prev.steps, ...steps],
+      }
+      continue
+    }
+    out.push({
+      key: mkKey(),
+      chat,
+      role,
+      text,
+      at: 0,
+      streaming: false,
+      steps,
+      ending: null,
+      streamed: false,
+    })
+  }
+  return out
+}
+
+
+
 /** Every `t` this module claims. useDesktopStream routes on it, so a type
  * added here and not there is a message that arrives and does nothing. */
 export function isAgentMessage(t: string): boolean {
@@ -470,17 +529,7 @@ export function useAgentChat(send: (event: Record<string, unknown>) => void): Ag
        * conversation the runtime no longer has open — which the runtime reads
        * as "start a new one", throwing away the history it had just restored. */
       if (classifyHistory(m) === 'live') {
-        const restored: AgentMessage[] = turns.map((h) => ({
-          key: key(),
-          chat: str(m.chat),
-          role: (str(h.role) || 'system') as AgentMessage['role'],
-          text: str(h.text),
-          at: 0,
-          streaming: false,
-          steps: stepsOf(h),
-          ending: null,
-          streamed: false,
-        }))
+        const restored = restoreTurns(turns, str(m.chat), key)
         if (str(m.chat)) chatRef.current = str(m.chat)
         /* An EMPTY live transcript is a conversation that was deleted from
          * under every face — a fresh start, so the clocks start fresh too. */
@@ -500,17 +549,7 @@ export function useAgentChat(send: (event: Record<string, unknown>) => void): Ag
        * conversation with the first transcript. */
       setMessages((cur) => {
         if (viewingRef.current === 0) liveRef.current = cur
-        return turns.map((h) => ({
-          key: key(),
-          chat: `past-${session}`,
-          role: (str(h.role) || 'system') as AgentMessage['role'],
-          text: str(h.text),
-          at: 0,
-          streaming: false,
-          steps: stepsOf(h),
-          ending: null,
-          streamed: false,
-        }))
+        return restoreTurns(turns, `past-${session}`, key)
       })
       viewingRef.current = session
       setViewing(session)
