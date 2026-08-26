@@ -17,7 +17,7 @@
      user-attachments URL it generates. A committed .mp4 referenced by path
      renders as a plain link, so the raw URL here is the fallback, not the
      goal. -->
-https://github.com/sentineldesk/desktop/raw/main/demo-sentineldesk.mp4
+https://cnsoluciones.com/articulos/demo-sentineldesk.mp4
 
 **This is a standalone, self-contained product.** One `docker compose up` gives
 a full desktop that people and an agent share — no control plane, no database,
