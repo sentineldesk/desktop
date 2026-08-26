@@ -38,7 +38,8 @@ run_command: execute, shell, one-off, command line, disk space, free space, how 
 job_start: in the background, long running, takes a while, download, downloading, fetch a file, wget, curl, unpack, extract, tar, build, compile, start it and, kick off, without waiting, let it run
 job_status: still running, still going, is it done, has it finished, did it finish, finished yet, how is it going, progress of the job, did it work, exit code, background task
 job_output: printed, what did it print, what the task printed, output of the job, the log, what it said, stdout, stderr, why did it fail, error output, background task
-job_wait: wait for it, wait until it finishes, when it is done, once it completes, after the download, block until
+wait_for_event: when something happens, tell me when, notify me when, an event fires, watch for a change, something changes on the desktop
+job_wait: wait for it, wait until it finishes, when it is done, once it completes, after the download, the download finishes, block until
 job_abort: stop it, abort, cancel it, kill the job, stop that, never mind, wrong one
 sleep: wait, pause, sleep, hold on, do nothing for, for three minutes, for 30 seconds, give it a minute, let it run for, while the recording, during the recording, delay, wait a bit, count down
 secret_list: password, passwords, credential, credentials, secret, secrets, vault, login, token, api key, passphrase, what password, which credentials, sign in as

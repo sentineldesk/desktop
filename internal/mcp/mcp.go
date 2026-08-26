@@ -722,6 +722,10 @@ func (s *Server) serve(conn net.Conn) {
 	// to construct it lazily and a good reason not to: the deferred close is
 	// the only thing that guarantees a departing client's watchers are torn
 	// down, and it has to be registered before the first message is read.
+	var recwatch func(func(string, map[string]any)) func()
+	if s.recorder != nil {
+		recwatch = s.recorder.Watch
+	}
 	client.events = newEventHub(write, s.room, func() *desktop.Watcher {
 		w, _ := s.watch()
 		return w
@@ -732,7 +736,7 @@ func (s *Server) serve(conn net.Conn) {
 		}
 		info, ok, err := e.ActiveWindow()
 		return info, ok && err == nil
-	})
+	}, recwatch)
 	defer client.events.close()
 
 	scanner := bufio.NewScanner(conn)

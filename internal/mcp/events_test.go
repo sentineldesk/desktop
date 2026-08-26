@@ -853,3 +853,150 @@ func TestTheFallbackNoteSaysWhereAndHow(t *testing.T) {
 		}
 	}
 }
+
+// --- wait_for_event ---------------------------------------------------------
+//
+// The zero-token wait, generalised past the browser. What these hold: a wait
+// returns the event that satisfied it, a filter passes over events that do not
+// match, waiting starts no notification stream, and a timeout is an answer
+// rather than a hang.
+
+func TestWaitForEventReturnsTheMatchingEvent(t *testing.T) {
+	room := newMovableRoom(AgentID, "AI agent")
+	s := testServer(t)
+	s.SetRoom(room, "AI agent")
+	c := newSession(t, s)
+
+	c.send("tools/call", map[string]any{"name": "wait_for_event", "arguments": map[string]any{
+		"topic": "control", "timeout_ms": 5000}})
+	// The waiter has to be registered before the event fires. The send is
+	// asynchronous from this side, so give the server a moment to reach the
+	// select — the same allowance awaitEvent's loop gives the stream.
+	time.Sleep(150 * time.Millisecond)
+	room.moveControl("viewer-1", "Ana")
+
+	res := c.read()
+	out := decodeJSONContent(t, res)
+	if out["ok"] != true {
+		t.Fatalf("the wait did not report a match: %v", out)
+	}
+	ev, _ := out["event"].(map[string]any)
+	if ev["change"] != "taken_from_you" {
+		t.Errorf("the wait returned the wrong event: %v", ev)
+	}
+}
+
+func TestWaitForEventFilterSkipsNonMatches(t *testing.T) {
+	room := newMovableRoom(AgentID, "AI agent")
+	s := testServer(t)
+	s.SetRoom(room, "AI agent")
+	c := newSession(t, s)
+
+	c.send("tools/call", map[string]any{"name": "wait_for_event", "arguments": map[string]any{
+		"topic": "control", "where": map[string]any{"change": "granted_to_you"},
+		"timeout_ms": 5000}})
+	time.Sleep(150 * time.Millisecond)
+	// First a transition that does NOT match the filter…
+	room.moveControl("viewer-1", "Ana")
+	time.Sleep(150 * time.Millisecond)
+	// …then the one that does.
+	room.moveControl(AgentID, "AI agent")
+
+	out := decodeJSONContent(t, c.read())
+	ev, _ := out["event"].(map[string]any)
+	if ev["change"] != "granted_to_you" {
+		t.Errorf("the filter let the wrong event through: %v", ev)
+	}
+}
+
+// TestWaitingDoesNotStartTheStream is the contract that keeps a wait private:
+// a client that never subscribed must not start receiving notifications
+// because some tool call needed a source running for a moment.
+func TestWaitingDoesNotStartTheStream(t *testing.T) {
+	room := newMovableRoom(AgentID, "AI agent")
+	s := testServer(t)
+	s.SetRoom(room, "AI agent")
+	c := newSession(t, s)
+
+	c.send("tools/call", map[string]any{"name": "wait_for_event", "arguments": map[string]any{
+		"topic": "control", "timeout_ms": 5000}})
+	time.Sleep(150 * time.Millisecond)
+	room.moveControl("viewer-1", "Ana")
+
+	// Exactly one message may arrive: the tool's own response. A notification
+	// on top of it would mean the wait subscribed the connection as a side
+	// effect.
+	msg := c.readMessage()
+	if msg["method"] == eventMethod {
+		t.Fatalf("the wait leaked a notification into an unsubscribed stream: %v", msg)
+	}
+	if _, ok := msg["result"]; !ok {
+		t.Fatalf("expected the tool response, got: %v", msg)
+	}
+}
+
+func TestWaitForEventTimesOutAsAnAnswer(t *testing.T) {
+	room := newMovableRoom(AgentID, "AI agent")
+	s := testServer(t)
+	s.SetRoom(room, "AI agent")
+	c := newSession(t, s)
+
+	res := c.call("tools/call", map[string]any{"name": "wait_for_event", "arguments": map[string]any{
+		"topic": "control", "timeout_ms": 200}})
+	out := decodeJSONContent(t, res)
+	if out["ok"] != false {
+		t.Fatalf("a quiet topic did not time out: %v", out)
+	}
+	if _, ok := out["waited_ms"]; !ok {
+		t.Errorf("the timeout does not say how long it waited: %v", out)
+	}
+}
+
+// TestWaitForEventRefusesASourcelessTopic: a topic with no source here can
+// never fire, and a wait on it would be a timeout reporting "no event" about
+// an event that was never possible.
+func TestWaitForEventRefusesASourcelessTopic(t *testing.T) {
+	s := testServer(t) // no recorder attached
+	room := newMovableRoom(AgentID, "AI agent")
+	s.SetRoom(room, "AI agent")
+	c := newSession(t, s)
+
+	res := c.call("tools/call", map[string]any{"name": "wait_for_event", "arguments": map[string]any{
+		"topic": "recording", "timeout_ms": 200}})
+	if isErr, _ := res["isError"].(bool); !isErr {
+		t.Fatalf("a topic with no source was waited on instead of refused: %v", res)
+	}
+}
+
+// TestARecordingDeathReachesAWaiter wires a real Recorder into the server and
+// fires the death the way the reaper does — the exact incident that created
+// the topic: recordings reported as in progress while nothing was written.
+func TestARecordingDeathReachesAWaiter(t *testing.T) {
+	rec := media.NewRecorder(":99", "mic", t.TempDir())
+	s := NewServer(config.Config{Display: ":99"}, nil, nil, rec)
+	room := newMovableRoom(AgentID, "AI agent")
+	s.SetRoom(room, "AI agent")
+	c := newSession(t, s)
+
+	c.send("tools/call", map[string]any{"name": "wait_for_event", "arguments": map[string]any{
+		"topic": "recording", "where": map[string]any{"kind": "died"},
+		"timeout_ms": 5000}})
+	time.Sleep(150 * time.Millisecond)
+
+	rec.Fire("died", map[string]any{
+		"path":   "/tmp/rec-x.mp4",
+		"reason": "ERROR: from element x264enc: Can not initialize x264 encoder.",
+	})
+
+	out := decodeJSONContent(t, c.read())
+	if out["ok"] != true {
+		t.Fatalf("the death never reached the waiter: %v", out)
+	}
+	ev, _ := out["event"].(map[string]any)
+	if ev["kind"] != "died" {
+		t.Errorf("the event is not a death: %v", ev)
+	}
+	if ev["reason"] == nil {
+		t.Errorf("a death without its reason is half an event: %v", ev)
+	}
+}

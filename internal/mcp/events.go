@@ -57,9 +57,11 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sentineldesk/desktop/internal/desktop"
 )
@@ -88,12 +90,20 @@ const (
 
 	// topicDesktop fires when the current virtual desktop changes.
 	topicDesktop eventTopic = "desktop"
+
+	// topicRecording fires when a recording starts, stops, or DIES. The last
+	// one is the reason the topic exists: a gst pipeline can be killed, crash,
+	// or hit a full disk, and until this event the only way to learn that was
+	// to poll get_recording_status — which for one memorable afternoon did not
+	// know either. The event carries kind, path, and for a death the reason
+	// gst printed.
+	topicRecording eventTopic = "recording"
 )
 
 // allTopics is both the default subscription and the validation list. Ordered,
 // because it is quoted back in error messages and in the tool's reply, and an
 // answer that reorders itself between calls reads as though something moved.
-var allTopics = []eventTopic{topicControl, topicRoom, topicWindows, topicFocus, topicDesktop}
+var allTopics = []eventTopic{topicControl, topicRoom, topicWindows, topicFocus, topicDesktop, topicRecording}
 
 func parseTopic(s string) (eventTopic, bool) {
 	s = strings.ToLower(strings.TrimSpace(s))
@@ -131,30 +141,98 @@ type eventHub struct {
 	room    Rooms
 	watcher func() *desktop.Watcher
 	active  func() (desktop.WindowInfo, bool)
+	// recwatch subscribes to the recorder — media.Recorder.Watch — behind a
+	// closure for the same testability as the two above. Nil means no recorder.
+	recwatch func(func(kind string, detail map[string]any)) func()
 
 	mu      sync.Mutex
 	topics  map[eventTopic]bool
 	stop    func() // tears down the current sources; nil when not subscribed
 	closed  bool
 	lastCtl string // the controller as of the last event, to describe transitions
+
+	// rebuildMu serialises source teardown-and-rebuild. Two concurrent
+	// rebuilds — a subscribe racing a wait_for_event, or two waits — would
+	// interleave "tear down the old" with "store the new" and leak a running
+	// source that keeps publishing forever, doubling every event after it.
+	// The state lock cannot serve: sources are built with it released, because
+	// building one reads the room.
+	rebuildMu sync.Mutex
+
+	// waiters are one-shot: the first event matching topic+where is delivered
+	// on ch and the waiter is removed. They are subscriptions in every way the
+	// sources care about — effectiveLocked folds them in — but invisible to
+	// the notification stream, so a wait does not spray events at a client
+	// that never subscribed.
+	waitSeq int
+	waiters map[int]*eventWaiter
+}
+
+// eventWaiter is one pending wait_for_event call.
+type eventWaiter struct {
+	topic eventTopic
+	// where filters on the event's detail: every key must be present and its
+	// value — stringified — must contain the given substring, case-insensitive.
+	// Empty means any event on the topic matches.
+	where map[string]string
+	ch    chan map[string]any // buffered 1; the hub sends at most once
+}
+
+// matches reports whether one event satisfies this waiter's filter.
+func (w *eventWaiter) matches(topic eventTopic, detail map[string]any) bool {
+	if topic != w.topic {
+		return false
+	}
+	for k, want := range w.where {
+		v, ok := detail[k]
+		if !ok {
+			return false
+		}
+		if !strings.Contains(strings.ToLower(fmt.Sprint(v)), strings.ToLower(want)) {
+			return false
+		}
+	}
+	return true
 }
 
 func newEventHub(write func(rpcResponse), room Rooms, watcher func() *desktop.Watcher,
-	active func() (desktop.WindowInfo, bool)) *eventHub {
+	active func() (desktop.WindowInfo, bool),
+	recwatch func(func(kind string, detail map[string]any)) func()) *eventHub {
 	return &eventHub{write: write, room: room, watcher: watcher, active: active,
-		topics: map[eventTopic]bool{}}
+		recwatch: recwatch, topics: map[eventTopic]bool{}}
 }
 
-// publish sends one event, if this connection asked for its topic.
+// publish sends one event to the notification stream (if this connection asked
+// for the topic) and to every pending waiter it matches (one-shot each). A
+// waiter hears an event the stream does not carry: waiting is its own ask.
 func (h *eventHub) publish(topic eventTopic, detail map[string]any) {
 	h.mu.Lock()
-	if h.closed || !h.topics[topic] {
+	if h.closed {
 		h.mu.Unlock()
 		return
+	}
+	stream := h.topics[topic]
+	var hit []*eventWaiter
+	for id, w := range h.waiters {
+		if w.matches(topic, detail) {
+			hit = append(hit, w)
+			delete(h.waiters, id)
+		}
 	}
 	write := h.write
 	h.mu.Unlock()
 
+	for _, w := range hit {
+		// Buffered 1 and sent at most once, so this cannot block; the select
+		// is belt over braces for a waiter that somehow already heard.
+		select {
+		case w.ch <- detail:
+		default:
+		}
+	}
+	if !stream {
+		return
+	}
 	params := map[string]any{"topic": string(topic)}
 	for k, v := range detail {
 		params[k] = v
@@ -175,8 +253,62 @@ func (h *eventHub) subscribe(topics []eventTopic) []string {
 	for _, t := range topics {
 		want[t] = true
 	}
+	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		return nil
+	}
+	h.topics = want
+	h.mu.Unlock()
+
+	h.rebuild()
+
+	h.mu.Lock()
+	out := make([]string, 0, len(h.topics))
+	for _, t := range allTopics {
+		if h.topics[t] {
+			out = append(out, string(t))
+		}
+	}
+	h.mu.Unlock()
+	return out
+}
+
+// effectiveLocked is every topic a source has to run for: the explicit
+// subscription plus one per pending waiter. Caller holds h.mu.
+func (h *eventHub) effectiveLocked() map[eventTopic]bool {
+	eff := map[eventTopic]bool{}
+	for t, on := range h.topics {
+		if on {
+			eff[t] = true
+		}
+	}
+	for _, w := range h.waiters {
+		eff[w.topic] = true
+	}
+	return eff
+}
+
+// rebuild tears the sources down and starts the set the effective topics need.
+// Serialised by rebuildMu — see the field — and safe to call from subscribe,
+// from a waiter arriving, and from a waiter giving up.
+func (h *eventHub) rebuild() {
+	h.rebuildMu.Lock()
+	defer h.rebuildMu.Unlock()
+
+	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		return
+	}
+	want := h.effectiveLocked()
+	old := h.stop
+	h.stop = nil
+	h.mu.Unlock()
+
 	wantRoom := want[topicControl] || want[topicRoom]
 	wantX := want[topicWindows] || want[topicFocus] || want[topicDesktop]
+	wantRec := want[topicRecording]
 
 	// Read the room before taking this hub's lock, never while holding it. The
 	// presence callback runs on whichever goroutine changed the room, and a hub
@@ -187,24 +319,15 @@ func (h *eventHub) subscribe(topics []eventTopic) []string {
 		current, _ = h.room.Controller()
 	}
 
-	h.mu.Lock()
-	if h.closed {
-		h.mu.Unlock()
-		return nil
+	if old != nil {
+		old()
 	}
-	// Tear the old sources down before building new ones, so a resubscription
-	// cannot end up with two watchers feeding one hub.
-	old := h.stop
-	h.stop = nil
-	h.topics = want
+
+	h.mu.Lock()
 	// Seeded with who is driving *now*, so the first event reports a real
 	// change rather than announcing the state as though it had just happened.
 	h.lastCtl = current
 	h.mu.Unlock()
-
-	if old != nil {
-		old()
-	}
 
 	var stops []func()
 	if wantRoom && h.room != nil {
@@ -214,6 +337,15 @@ func (h *eventHub) subscribe(topics []eventTopic) []string {
 		if w := h.watcher(); w != nil {
 			stops = append(stops, h.watchX(w))
 		}
+	}
+	if wantRec && h.recwatch != nil {
+		stops = append(stops, h.recwatch(func(kind string, detail map[string]any) {
+			d := map[string]any{"kind": kind}
+			for k, v := range detail {
+				d[k] = v
+			}
+			h.publish(topicRecording, d)
+		}))
 	}
 	stopAll := func() {
 		for _, s := range stops {
@@ -227,17 +359,40 @@ func (h *eventHub) subscribe(topics []eventTopic) []string {
 	if h.closed {
 		h.mu.Unlock()
 		stopAll()
-		return nil
+		return
 	}
 	h.stop = stopAll
-	out := make([]string, 0, len(h.topics))
-	for _, t := range allTopics {
-		if h.topics[t] {
-			out = append(out, string(t))
-		}
-	}
 	h.mu.Unlock()
-	return out
+}
+
+// addWaiter registers a one-shot wait and makes sure its topic's source runs.
+func (h *eventHub) addWaiter(topic eventTopic, where map[string]string) (int, chan map[string]any, bool) {
+	w := &eventWaiter{topic: topic, where: where, ch: make(chan map[string]any, 1)}
+	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		return 0, nil, false
+	}
+	if h.waiters == nil {
+		h.waiters = map[int]*eventWaiter{}
+	}
+	h.waitSeq++
+	id := h.waitSeq
+	h.waiters[id] = w
+	h.mu.Unlock()
+	h.rebuild()
+	return id, w.ch, true
+}
+
+// removeWaiter forgets a wait that gave up, and lets the sources shrink back.
+func (h *eventHub) removeWaiter(id int) {
+	h.mu.Lock()
+	_, had := h.waiters[id]
+	delete(h.waiters, id)
+	h.mu.Unlock()
+	if had {
+		h.rebuild()
+	}
 }
 
 // unsubscribe stops everything. Idempotent: a client that says it twice is
@@ -509,6 +664,43 @@ func (s *Server) buildEventTools() []toolDef {
 			Risk:        riskRead,
 			InputSchema: schema(map[string]any{}),
 		},
+		{
+			Name: "wait_for_event",
+			Risk: riskRead,
+			Description: "Block until ONE event matching a topic (and an optional " +
+				"filter) fires, and return that event's detail. This is the " +
+				"desktop-wide sibling of browser_wait_until: one call, however " +
+				"long the wait, no polling and no turns spent looking — the " +
+				"matching is done here, deterministically, and you spend a step " +
+				"only on the event itself.\n\n" +
+				"Topics are the same as subscribe_events: control, room, windows, " +
+				"focus, desktop, recording. `where` narrows the match: every key " +
+				"must exist in the event's detail and its value must contain your " +
+				"substring, case-insensitively. Examples: topic `recording` with " +
+				"where {\"kind\":\"died\"} returns the moment a recording stops " +
+				"being written, with the reason; topic `control` with " +
+				"{\"change\":\"granted_to_you\"} waits for the controls; topic " +
+				"`focus` with {\"title\":\"Save\"} waits for a Save dialog to take " +
+				"focus.\n\n" +
+				"Returns {ok, waited_ms, event}. ok false means the timeout came " +
+				"first — which for a watchdog wait is often the GOOD outcome: " +
+				"'ok: false' on a five-minute wait for `recording`/`died` means " +
+				"five minutes with no death. This does not touch the " +
+				"subscribe_events subscription: waiting is its own ask, and the " +
+				"notification stream neither starts nor changes.",
+			InputSchema: schema(map[string]any{
+				"topic": map[string]any{
+					"type": "string", "enum": topicNames(),
+					"description": "which topic to wait on",
+				},
+				"where": map[string]any{
+					"type":                 "object",
+					"additionalProperties": map[string]any{"type": "string"},
+					"description":          "detail field -> required substring (case-insensitive); omit to match any event on the topic",
+				},
+				"timeout_ms": pIntDef("give up after this long (default 60000, max 600000)", 60000),
+			}, "topic"),
+		},
 	}
 }
 
@@ -574,6 +766,9 @@ func (s *Server) dispatchEvents(ctx context.Context, name string, args map[strin
 				}
 			}
 		}
+		if s.recorder == nil && hasTopic(active, topicRecording) {
+			unavailable = append(unavailable, string(topicRecording))
+		}
 		result := map[string]any{
 			"subscribed": active,
 			"method":     eventMethod,
@@ -591,8 +786,87 @@ func (s *Server) dispatchEvents(ctx context.Context, name string, args map[strin
 		}
 		hub.unsubscribe()
 		return jsonContent(map[string]any{"subscribed": hub.subscribed()}), false, true
+
+	case "wait_for_event":
+		hub := eventsOf(ctx)
+		if hub == nil {
+			return textContent("this connection cannot deliver events"), true, true
+		}
+		topic, ok := parseTopic(argStr(args, "topic"))
+		if !ok {
+			return textContent("unknown topic %q. Available: %s",
+				argStr(args, "topic"), strings.Join(topicNames(), ", ")), true, true
+		}
+		if err := s.topicAvailable(topic); err != nil {
+			// Refused rather than waited on: a topic with no source here will
+			// never fire, and a timeout would report "no event" about an event
+			// that was never possible.
+			return textContent("wait_for_event: %v", err), true, true
+		}
+		where := map[string]string{}
+		if raw, ok := args["where"].(map[string]any); ok {
+			for k, v := range raw {
+				sv, ok := v.(string)
+				if !ok {
+					return textContent("`where` values must be strings; %q is not", k), true, true
+				}
+				where[k] = sv
+			}
+		}
+		timeout := argInt(args, "timeout_ms")
+		if timeout <= 0 {
+			timeout = 60000
+		}
+		// The same ceiling as browser_wait_until, for the same reason: this
+		// holds a step open, and a wait that will never end should still get
+		// its answer today.
+		if timeout > 600000 {
+			timeout = 600000
+		}
+		id, ch, ok := hub.addWaiter(topic, where)
+		if !ok {
+			return textContent("this connection is closing"), true, true
+		}
+		started := time.Now()
+		timer := time.NewTimer(time.Duration(timeout) * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case detail := <-ch:
+			return jsonContent(map[string]any{
+				"ok": true, "waited_ms": time.Since(started).Milliseconds(),
+				"event": detail,
+			}), false, true
+		case <-timer.C:
+			hub.removeWaiter(id)
+			return jsonContent(map[string]any{
+				"ok": false, "waited_ms": time.Since(started).Milliseconds(),
+				"note": "no matching event before the timeout",
+			}), false, true
+		case <-ctx.Done():
+			hub.removeWaiter(id)
+			return textContent("cancelled while waiting"), true, true
+		}
 	}
 	return nil, false, false
+}
+
+// topicAvailable says whether this desktop can ever fire the topic.
+func (s *Server) topicAvailable(t eventTopic) error {
+	switch t {
+	case topicControl, topicRoom:
+		if s.room == nil {
+			return fmt.Errorf("topic %s has no source on this desktop (no room)", t)
+		}
+	case topicWindows, topicFocus, topicDesktop:
+		if w, _ := s.watch(); w == nil {
+			return fmt.Errorf("topic %s has no source on this desktop (no display watcher)", t)
+		}
+	case topicRecording:
+		if s.recorder == nil {
+			return fmt.Errorf("topic %s has no source on this desktop (no recorder)", t)
+		}
+	}
+	return nil
 }
 
 func hasTopic(list []string, t eventTopic) bool {

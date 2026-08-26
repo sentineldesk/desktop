@@ -142,6 +142,7 @@ sudo_status: permisos, tengo sudo, soy root, privilegios
 job_start: en segundo plano, en el fondo, descargar, descargá, descarga, bajar el archivo, wget, curl, descomprimir, descomprimí, extraer, compilar, tarda, va a tardar, dejalo corriendo, sin esperar
 job_status: sigue corriendo, ya terminó, ya termino, terminó la tarea, termino la tarea, cómo va, como va, avance, código de salida, codigo de salida
 job_output: qué imprimió, que imprimio, salida de la tarea, el log, qué dijo, que dijo, por qué falló, por que fallo, salida de error
+wait_for_event: cuando pase algo, avisame cuando, esperá el evento, espera el evento, cuando cambie algo, cuando suceda
 job_wait: esperar a que termine, esperá que termine, cuando termine, una vez que termine, después de la descarga, despues de la descarga
 job_abort: frenar, frená, abortar, abortá, parar, pará, cancelar, cancelá, matar la tarea, no era eso
 sleep: esperar, esperá, espera, pausa, pausar, poner en pausa, dormir, hacer nada por, por tres minutos, por 30 segundos, dale un minuto, mientras graba, durante la grabación, durante la grabacion, demora, aguantá, cuenta regresiva

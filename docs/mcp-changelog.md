@@ -12,6 +12,22 @@ server reports both in `initialize` (`serverInfo.version` and
 `_meta["sentineldesk/catalogue"].tools`), so "I require `system_updates`"
 becomes a check against a number instead of a crash against a missing name.
 
+## 138 tools — 2026-08-25
+
+- `wait_for_event` added: block until one event matching a topic — and an
+  optional `where` filter on its detail — fires, and return that event. The
+  desktop-wide sibling of `browser_wait_until`: the matching runs here,
+  deterministically, and the agent spends a step only on the event itself,
+  never on looking.
+
+  The `recording` topic arrived with it, and the incident that forced both is
+  worth recording: a gst pipeline died two milliseconds after starting, three
+  times in one afternoon, and every layer went on reporting a recording in
+  progress. `recording`/`died` carries the path and the reason gst printed;
+  `started` and `stopped` complete the set. A waiter is one-shot and private —
+  it does not start, join, or change the `subscribe_events` notification
+  stream.
+
 ## 137 tools — 2026-08-24
 
 - `type_secret` added: a credential into a field on screen, by ref, without the

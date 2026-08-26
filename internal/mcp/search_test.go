@@ -176,6 +176,7 @@ var searchCorpus = map[string]string{
 	"ui_wait_for":           "wait for the dialog to appear",
 	"wait":                  "pause for two seconds",
 	"wait_for_idle":         "wait until the screen stops changing",
+	"wait_for_event":        "wait until something happens on the desktop and tell me what it was",
 	"wait_for_window":       "wait until the window opens",
 	"window_hierarchy":      "show the parent and child windows",
 	"window_properties":     "what are the details of that window",

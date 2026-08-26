@@ -129,6 +129,7 @@ ui_tree
 ui_wait_for
 unsubscribe_events
 wait
+wait_for_event
 wait_for_idle
 wait_for_window
 window_hierarchy
