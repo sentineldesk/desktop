@@ -31,6 +31,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { AgentWorkspace } from './agent/AgentWorkspace'
+import { ScreenSlot, ScreenStage } from './ScreenStage'
 import { AgentQuestion } from './transport/AgentQuestion'
 import { ControlRequest } from './transport/ControlRequest'
 import { attachDesktopInput } from './transport/desktopInput'
@@ -178,9 +179,11 @@ export function App() {
   const mutedRef = useRef(muted)
   mutedRef.current = muted
 
-  /* The element travels between modes, so it REMOUNTS. A callback ref feeds
-   * state, and the effects below rebind the stream and the input pipe on the
-   * new node — the WebRTC session itself never notices. */
+  /* The element is mounted ONCE, by ScreenStage, and moved between modes with
+   * a transform — see ScreenStage.tsx for why. The callback ref stays because
+   * the effects below still need the node the first time it appears; what has
+   * gone is the remount, and with it the audible stop-and-start every switch
+   * used to make. */
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null)
   const bindVideo = useCallback((el: HTMLVideoElement | null) => {
@@ -395,15 +398,18 @@ export function App() {
         />
       ) : null}
 
-      <div className="shell-main">
+      <ScreenStage media={screenEl}>
         {live && mode === 'agent' ? (
           <AgentWorkspace
             desktop={desktop}
+            /* Not the screen itself any more — the empty box that says where
+             * it goes. The two z values are read off the views that surround
+             * each one; ScreenStage.tsx lists them and why. */
             screen={
               expanded ? (
-                screenEl
+                <ScreenSlot z={5} />
               ) : (
-                <div className="pointer-events-none absolute inset-0">{screenEl}</div>
+                <ScreenSlot z={31} interactive={false} />
               )
             }
             name={name || t('ws.you')}
@@ -422,7 +428,7 @@ export function App() {
             }}
           />
         ) : (
-          <div id="stage-desktop">{live || showStatus ? screenEl : null}</div>
+          <div id="stage-desktop">{live || showStatus ? <ScreenSlot z={1} /> : null}</div>
         )}
 
         {showStatus ? (
@@ -604,7 +610,7 @@ export function App() {
             {toast.msg}
           </div>
         ) : null}
-      </div>
+      </ScreenStage>
     </div>
   )
 }
